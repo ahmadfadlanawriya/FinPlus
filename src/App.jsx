@@ -7,12 +7,12 @@ import {
 import {
   Wallet, LayoutDashboard, ListOrdered, Upload, CreditCard, Target,
   Plus, Trash2, Sparkles, AlertTriangle, Check, Loader2, X, Search,
-  FileText, Banknote, ChevronDown, RefreshCw, PiggyBank, Plane, Ban, RotateCcw, Users, Menu, MessageCircle, Landmark, Image as ImageIcon, ChevronRight, ArrowDownLeft, ArrowUpRight, LogOut, UserCircle, HandCoins, LayoutList, TableIcon,
+  FileText, Banknote, ChevronDown, RefreshCw, PiggyBank, Plane, Ban, RotateCcw, Users, Menu, MessageCircle, Landmark, Image as ImageIcon, ChevronRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, LogOut, UserCircle, HandCoins, LayoutList, TableIcon, TrendingUp,
 } from "lucide-react";
 
 /* ----------------------------- brand palette ----------------------------- */
 const BRAND = {
-  blue: "#476C9B", blueDark: "#33526F", blueLight: "#ADD9F4", blueTint: "#EAF3FB",
+  blue: "#3B6FD4", blueDark: "#2A56B0", blueLight: "#93B8F4", blueTint: "#EEF3FE",
   red: "#984447", redDark: "#7A3638", redLight: "#D9AEB0", redTint: "#F7E9E9",
   gold: "#B98B4E", goldDark: "#8C6A3A", goldLight: "#E8C988", goldTint: "#FBF1DE",
   plum: "#6B5B7A", plumDark: "#52415F", plumLight: "#C9B9D6", plumTint: "#F0EBF4",
@@ -22,11 +22,20 @@ const BRAND = {
 
 /* ----------------------------- constants ----------------------------- */
 const CATEGORIES = [
-  "Food & Dining", "Groceries", "Transport", "Shopping", "Bills & Utilities",
+  "Food & Dining", "Groceries", "Coffee n Cafe", "Transport", "Shopping", "Bills & Utilities",
   "Subscriptions", "Entertainment", "Health", "Education", "Travel",
   "Transfers", "Cash & ATM", "Fees & Interest", "Card Payment", "Salary", "Income", "Other",
 ];
 const INCOME_CATEGORIES = ["Salary", "Income", "Transfers", "Other"];
+const INVEST_TYPES = ["Bonds", "Mutual Funds", "Gold", "Stocks", "Crypto"];
+const INVEST_COLORS = { "Bonds": "#5B8AA6", "Mutual Funds": "#3B6FD4", "Gold": "#B98B4E", "Stocks": "#7A8B5E", "Crypto": "#6B5B7A" };
+const INVEST_FIELDS = {
+  "Gold":         { qtyLabel: "Weight (grams)", priceLabel: "Gold price / gram (IDR)", extraLabel: "Avg. buy price / gram (IDR)", isBond: false },
+  "Stocks":       { qtyLabel: "Shares", priceLabel: "Current price / share (IDR)", extraLabel: "Avg. buy price / share (IDR)", isBond: false },
+  "Mutual Funds": { qtyLabel: "Units held", priceLabel: "NAV per unit (IDR)", extraLabel: "Avg. buy NAV / unit (IDR)", isBond: false },
+  "Crypto":       { qtyLabel: "Coins / tokens", priceLabel: "Current price (IDR)", extraLabel: "Avg. buy price (IDR)", isBond: false },
+  "Bonds":        { qtyLabel: "Qty (bonds)", priceLabel: "Face value / bond (IDR)", extraLabel: "Coupon rate (%)", isBond: true },
+};
 const DEFAULT_SCOPES = [
   { name: "personal", color: BRAND.blue },
   { name: "family", color: BRAND.slate },
@@ -42,7 +51,7 @@ const RELATION_COLOR = { Family: BRAND.slate, Friends: BRAND.gold, "Work Colleag
 const MAX_PARTIES = 20;
 const TRIP_GAP_DAYS = 5;
 
-const ID_MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MEI: 5, JUN: 6, JUL: 7, AGU: 8, AGS: 8, SEP: 9, OKT: 10, NOV: 11, DES: 12 };
+const ID_MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MEI: 5, MAY: 5, JUN: 6, JUL: 7, AGU: 8, AGS: 8, AUG: 8, SEP: 9, OKT: 10, OCT: 10, NOV: 11, DES: 12, DEC: 12 };
 const SAAS = [
   "datadog", "mongodb", "mongo atlas", "amazon web", "aws", "google cloud", "gcp", "vercel", "netlify",
   "cloudflare", "digitalocean", "heroku", "render.com", "openai", "anthropic", "claude.ai", "github", "gitlab",
@@ -51,7 +60,7 @@ const SAAS = [
   "airtable", "zapier", "adobe", "microsoft 365", "office 365", "canva", "loom", "postman", "retool",
   "clerk", "auth0", "algolia", "snowflake", "openrouter", "huggingface", "replicate", "fly.io", "railway", "spotify", "netflix", "youtube premium",
 ];
-const FEE_KW = ["membership fee", "e-statement fee", "statement fee", "biaya notifikasi", "annual fee", "iuran", "admin fee"];
+const FEE_KW = ["membership fee", "e-statement fee", "statement fee", "biaya notifikasi", "annual fee", "iuran", "admin fee", "biaya adm", "pajak bunga", "administration fee", "handling charges", "bea meterai"];
 const CURRENCY = {
   MYR: { c: "Malaysia", flag: "\u{1F1F2}\u{1F1FE}" }, HKD: { c: "Hong Kong", flag: "\u{1F1ED}\u{1F1F0}" },
   SGD: { c: "Singapore", flag: "\u{1F1F8}\u{1F1EC}" }, USD: { c: "United States", flag: "\u{1F1FA}\u{1F1F8}" },
@@ -115,7 +124,13 @@ function normDate(s) {
 function parseIndoDate(s) {
   s = (s || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // "13 MEI" or "13MEI" — UOB style
+  // "01 May 2026" or "01 MEI 2026" — CIMB/CASA style (full date with year)
+  const mFull = s.match(/^(\d{1,2})\s+([A-Za-z]{3,4})\s+(\d{4})$/);
+  if (mFull) {
+    const day = mFull[1].padStart(2, "0"); const mo = ID_MONTHS[mFull[2].toUpperCase().slice(0, 3)]; const y = mFull[3];
+    if (mo) return `${y}-${String(mo).padStart(2, "0")}-${day}`;
+  }
+  // "13 MEI" or "13MEI" — UOB style (no year, infer from current year)
   const m = s.match(/(\d{1,2})\s*([A-Za-z]{3,4})/);
   if (m) {
     const day = m[1].padStart(2, "0"); const mo = ID_MONTHS[m[2].toUpperCase().slice(0, 3)];
@@ -135,13 +150,15 @@ function nextMonth(iso) { const d = new Date(iso); d.setMonth(d.getMonth() + 1);
 
 /* ----------------------------- transaction classifier ----------------------------- */
 // AI kind labels are unreliable; re-derive deterministically from the description + CR flag.
-const PAYMENT_KW = ["paymt", "pembayaran", "thru e-bank", "homeb", "cyberb", "payment thru", "pelunasan"];
-function classifyDirection(desc, aiKind, hasCR) {
+const PAYMENT_KW = ["paymt", "pembayaran", "thru e-bank", "homeb", "cyberb", "payment thru", "pelunasan", "kartu kredit", "payment-thank"];
+const TRANSFER_KW = ["overbooking", "trf to", "trf fr", "transfer to", "atm transfer", "tr to savings"];
+function classifyDirection(desc, aiKind, hasCR, accountType) {
   const d = (desc || "").toLowerCase();
-  const isPaymentText = PAYMENT_KW.some((k) => d.includes(k));
-  if (isPaymentText) return "payment";                  // genuine card bill payment
-  if (hasCR || aiKind === "refund") return "income";    // credits / reversals
-  return "expense";                                       // default: a real purchase
+  if (PAYMENT_KW.some((k) => d.includes(k))) return "payment";
+  if (hasCR || aiKind === "refund") return "income";
+  // Trust AI kind=transfer (e.g. BCA SWITCHING CR, FLAZZ TOPUP) in addition to keyword list
+  if (aiKind === "transfer" || TRANSFER_KW.some((k) => d.includes(k))) return "transfer";
+  return "expense";
 }
 
 /* ----------------------------- period (monthly / quarterly / YTD) ----------------------------- */
@@ -167,18 +184,19 @@ function periodLabel(mode, monthStr) {
 function periodCompareLabel(mode) { return mode === "quarter" ? "vs last quarter" : mode === "ytd" ? "vs last year" : "vs last month"; }
 
 /* ----------------------------- debit / QRIS balance ----------------------------- */
-const CURRENCY_LIST = ["IDR", "USD", "SGD", "MYR", "HKD", "EUR", "GBP", "JPY", "AUD"];
+const CURRENCY_LIST = ["IDR", "USD", "SGD", "CNY", "JPY", "HKD", "MYR", "EUR", "GBP", "AUD"];
 function fmtMoney(amount, currency) {
   try { return new Intl.NumberFormat(currency === "IDR" ? "id-ID" : "en-US", { style: "currency", currency: currency || "IDR", maximumFractionDigits: currency === "IDR" ? 0 : 2 }).format(Number(amount) || 0); }
   catch { return idr(amount); }
 }
+function relDate(iso) { const d = new Date(iso); const days = Math.floor((Date.now() - d) / 86400000); if (days === 0) return "today"; if (days === 1) return "yesterday"; if (days < 7) return `${days} days ago`; return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }); }
 function resolveDebitTarget(accounts, accountId) {
   const acc = accounts.find((a) => a.id === accountId); if (!acc) return null;
   if (acc.type === "debit") return acc.id;
   if (acc.type === "qris" && acc.linkedAccountId) return acc.linkedAccountId;
   return null;
 }
-function signedAmount(t) { return t.direction === "expense" ? -t.amount : t.direction === "income" ? t.amount : 0; }
+function signedAmount(t) { return t.direction === "income" ? t.amount : t.direction === "payment" ? 0 : -t.amount; }
 function applyBalanceDelta(accounts, accountId, delta) {
   const target = resolveDebitTarget(accounts, accountId);
   if (!target || !delta) return accounts;
@@ -214,11 +232,14 @@ const toDbParty = (p, uid) => ({ id: p.id, user_id: uid, name: p.name, phone: p.
 const fromDbParty = (r) => ({ id: r.id, name: r.name, phone: r.phone, relation: r.relation });
 const toDbStatement = (s, uid) => ({ id: s.id, user_id: uid, account_id: s.accountId || null, month: s.month, statement_date: s.statementDate || null, due_date: s.dueDate || null, total_amount: s.totalAmount, min_payment: s.minPayment ?? null });
 const fromDbStatement = (r) => ({ id: r.id, accountId: r.account_id, month: r.month, statementDate: r.statement_date, dueDate: r.due_date, totalAmount: Number(r.total_amount), minPayment: r.min_payment != null ? Number(r.min_payment) : null });
+const fromDbBalHist = (r) => ({ accountId: r.account_id, recordedAt: r.recorded_at, balance: Number(r.balance) });
 const fromDbLoan = (r) => ({ id: r.id, borrowerId: r.borrower_id, borrowerName: r.borrower_name, description: r.description || "", principal: Number(r.principal), sourceAccountId: r.source_account_id, issuedDate: r.issued_date, dueDate: r.due_date || "", status: r.status || "active", notes: r.notes || "" });
 const fromDbLoanPayment = (r) => ({ id: r.id, loanId: r.loan_id, amount: Number(r.amount), paidDate: r.paid_date, note: r.note || "" });
+const toDbImportHistory = (r, uid) => ({ id: r.id, user_id: uid, file_name: r.fileName, file_hash: r.fileHash, file_size: r.fileSize || 0, imported_at: r.importedAt, account_id: r.accountId || null, account_name: r.accountName || null, tx_count: r.txCount || 0 });
+const fromDbImportHistory = (r) => ({ id: r.id, fileName: r.file_name, fileHash: r.file_hash, fileSize: r.file_size, importedAt: r.imported_at, accountId: r.account_id, accountName: r.account_name, txCount: r.tx_count });
 
 async function loadAllData(userId) {
-  const [ar, tr, gr, sr, pr, mr, tmr, profr, str] = await Promise.all([
+  const [ar, tr, gr, sr, pr, mr, tmr, profr, str, bhr, ihr] = await Promise.all([
     supabase.from("accounts").select("*").eq("user_id", userId),
     supabase.from("transactions").select("*").eq("user_id", userId),
     supabase.from("goals").select("*").eq("user_id", userId),
@@ -228,6 +249,8 @@ async function loadAllData(userId) {
     supabase.from("trip_meta").select("*").eq("user_id", userId),
     supabase.from("profiles").select("scopes").eq("id", userId).maybeSingle(),
     supabase.from("statements").select("*").eq("user_id", userId),
+    supabase.from("balance_history").select("*").eq("user_id", userId).order("recorded_at", { ascending: false }),
+    supabase.from("import_history").select("*").eq("user_id", userId).order("imported_at", { ascending: false }),
   ]);
   return {
     accounts: (ar.data || []).map(fromDbAccount),
@@ -239,20 +262,19 @@ async function loadAllData(userId) {
     tripMeta: Object.fromEntries((tmr.data || []).map((r) => [r.trip_key, { purpose: r.purpose, banner: r.banner, name: r.name || "" }])),
     scopes: Array.isArray(profr.data?.scopes) && profr.data.scopes.length ? profr.data.scopes : null,
     statements: (str.data || []).map(fromDbStatement),
+    balanceHistory: (bhr.data || []).map(fromDbBalHist),
+    importHistory: (ihr.data || []).map(fromDbImportHistory),
   };
 }
 
-async function syncTable(table, userId, rows) {
+async function syncTable(table, userId, rows, onError) {
   if (rows.length) {
-    // Upsert first so Supabase always has the latest data before any deletes
     const { error: ue } = await supabase.from(table).upsert(rows, { onConflict: "id" });
-    if (ue) { console.error("[db] upsert", table, ue); return; }
-    // Delete rows whose id is no longer in the local set
+    if (ue) { console.error("[db] upsert", table, ue); onError && onError(table, ue.message); return; }
     const ids = rows.map((r) => r.id);
-    const { error: de } = await supabase.from(table).delete().eq("user_id", userId).not("id", "in", `(${ids.map((id) => `'${id}'`).join(",")})`);
+    const { error: de } = await supabase.from(table).delete().eq("user_id", userId).not("id", "in", `(${ids.join(",")})`);
     if (de) console.error("[db] delete stale", table, de);
   } else {
-    // Genuinely empty — user deleted everything, safe to wipe
     const { error: de } = await supabase.from(table).delete().eq("user_id", userId);
     if (de) console.error("[db] delete all", table, de);
   }
@@ -260,7 +282,7 @@ async function syncTable(table, userId, rows) {
 // For tables with a natural text key instead of uuid id (memory, trip_meta)
 async function syncTableByKey(table, userId, rows, keyCol) {
   if (rows.length) {
-    const { error: ue } = await supabase.from(table).upsert(rows, { onConflict: keyCol });
+    const { error: ue } = await supabase.from(table).upsert(rows, { onConflict: `user_id,${keyCol}` });
     if (ue) { console.error("[db] upsert", table, ue); return; }
     const keys = rows.map((r) => r[keyCol]);
     const { error: de } = await supabase.from(table).delete().eq("user_id", userId).not(keyCol, "in", `(${keys.map((k) => `'${k}'`).join(",")})`);
@@ -293,21 +315,52 @@ function parseJSON(text) {
   }
 }
 function fileToBase64(file) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = () => rej(new Error("Couldn't read that file.")); r.readAsDataURL(file); }); }
+async function hashFile(file) { const buf = await file.arrayBuffer(); const digest = await crypto.subtle.digest("SHA-256", buf); return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join(""); }
 async function extractFromFile(file) {
   const b64 = await fileToBase64(file);
   const isPdf = file.type === "application/pdf";
   const media = file.type || (isPdf ? "application/pdf" : "image/jpeg");
   const prompt =
-    "You are reading an Indonesian bank credit card statement (UOB, Danamon, BCA, Mandiri, CIMB, or similar). Extract every individual transaction row. " +
+    "You are reading an Indonesian bank statement \u2014 either a CREDIT CARD statement (UOB, Danamon, BCA, Mandiri, CIMB credit) or a SAVINGS/CASA account statement (e.g. CIMB OCTO Savers, BCA Tahapan, Mandiri Tabungan). Extract every individual transaction row. " +
     "Return ONLY a JSON array, no prose, no markdown. " +
-    'Each item: {"date":"transaction date exactly as printed e.g. \'13 MEI\' or \'17/05\'","desc":"merchant or fee name","amount":number,"kind":"purchase"|"payment"|"refund","fx":"e.g. USD 109.12 or empty","hasCR":true/false}. ' +
+    'Each item: {"date":"YYYY-MM-DD if the year is printed on the statement, otherwise exactly as printed e.g. \'13 MEI\' or \'17/05\'","desc":"merchant, counterparty, or fee name \u2014 omit card numbers and reference codes","amount":number,"kind":"purchase"|"payment"|"refund"|"transfer","fx":"e.g. USD 109.12 or empty string","hasCR":true/false}. ' +
     "Rules:\\n" +
-    "- 'amount' is ALWAYS the IDR billed amount (rightmost column, labelled Jumlah Tagihan / JUMLAH TAGIHAN), a plain integer with no thousand separators. Never use the foreign-currency figure for amount \u2014 put that in 'fx'.\\n" +
-    "- 'date': if the statement has two date columns (TGL TRANS. and TGL PENCATATAN), always use the first one (transaction date).\\n" +
-    "- 'hasCR' is true ONLY when that row's amount is followed by the letters CR. Most purchase rows have hasCR=false.\\n" +
-    "- 'kind': set 'payment' for card bill payments (desc contains PAYMT, PEMBAYARAN, THRU E-BANK, or PELUNASAN). Set 'refund' for other CR rows (cashbacks, fee reversals, loyalty credit, JCB_CB). Set 'purchase' for everything else.\\n" +
-    "- Bank fees and charges are valid purchases: include BIAYA MATERAI, BIAYA NOTIFIKASI, BIAYA EMAIL STATEMENT, BIAYA TAHUNAN, BIAYA ADMINISTRASI.\\n" +
-    "- SKIP these non-transaction lines: previous-balance rows (TAGIHAN SEBELUMNYA, TAGIHAN BULAN LALU, PREVIOUS BALANCE, OUTSTANDING BALANCE), totals (SUB TOTAL, TOTAL TAGIHAN, RINGKASAN TAGIHAN), bonus/point summaries, column headers, card-number-only rows, END OF STATEMENT, and any row whose amount is 0.\\n" +
+    "CREDIT CARD statements (single amount column, Jumlah Tagihan / JUMLAH TAGIHAN):\\n" +
+    "- 'amount' is the IDR billed amount from that column, no thousand separators, plain integer. Never use a foreign-currency figure \u2014 put that in 'fx'.\\n" +
+    "- 'hasCR' is true ONLY when that row's amount is followed by the letters CR.\\n" +
+    "- If the statement has two date columns (TGL TRANS. and TGL PENCATATAN), always use the first.\\n" +
+    "SAVINGS/CASA statements (separate Debit and Kredit columns + Saldo running balance):\\n" +
+    "- 'amount' is the value in the Debit OR Kredit column \u2014 NOT the Saldo column. Strip thousand separators; keep decimals as a float.\\n" +
+    "- 'hasCR' is true when the amount is in the Kredit column (incoming/credit side). false when in the Debit column (outgoing).\\n" +
+    "- 'date': use the transaction date exactly as printed (e.g. '01 May 2026').\\n" +
+    "BCA Tahapan (REKENING TAHAPAN) debit/savings statements \u2014 special rules:\\n" +
+    "- Column layout: TANGGAL | KETERANGAN | CBG | MUTASI | SALDO. There is ONE MUTASI column (not separate Debit/Kredit).\\n" +
+    "- 'hasCR': true when MUTASI has NO 'DB' suffix (credit/incoming); false when MUTASI ends with 'DB' (debit/outgoing).\\n" +
+    "- 'date': printed as 'DD/MM' (e.g. '01/05') \u2014 return exactly as printed.\\n" +
+    "- Per transaction type in KETERANGAN:\\n" +
+    "  TRANSAKSI DEBIT (QR purchases): kind 'purchase', hasCR false. The merchant name follows '00000.00' in the description \u2014 strip the prefix and QR reference codes, e.g. '00000.00COFFEE LOV' \u2192 desc 'Coffee Lov'.\\n" +
+    "  TRSF E-BANKING CR / BI-FAST CR: kind 'refund', hasCR true. desc = counterparty name (last meaningful line, skip reference codes like 0105/FTSCY/...).\\n" +
+    "  TRSF E-BANKING DB: kind 'purchase', hasCR false. desc = counterparty or company name.\\n" +
+    "  SWITCHING CR: kind 'transfer', hasCR true. desc 'BCA Transfer In'.\\n" +
+    "  KARTU KREDIT/PL: kind 'payment', hasCR false. desc 'BCA Card Payment'.\\n" +
+    "  TARIKAN ATM: kind 'purchase', hasCR false. desc 'ATM Withdrawal'.\\n" +
+    "  BIAYA ADM: kind 'purchase', hasCR false. desc 'BCA Admin Fee'.\\n" +
+    "  FLAZZ BCA TOPUP: kind 'transfer', hasCR false. desc 'Flazz BCA Top-up'.\\n" +
+    "  BUNGA: kind 'refund', hasCR true. desc 'Bank Interest'.\\n" +
+    "  PAJAK BUNGA: kind 'purchase', hasCR false. desc 'Interest Tax'.\\n" +
+    "CIMB Niaga credit card statements (MC WORLD PC, VISA Infinite, JCB Ultimate):\\n" +
+    "- Columns: Tgl. Transaksi | Tgl. Pembukuan | Keterangan | Jumlah. Dates are DD/MM (e.g. '07/05').\\n" +
+    "- FX format: 'WATI.IO... BILLED AS USD 50.00(1 USD = 17629.83 IDR 881,491.63' \u2014 'amount' is the LAST number on the line (the IDR billed amount, e.g. 881491.63); put the foreign currency info (e.g. 'USD 50.00') in 'fx'.\\n" +
+    "- 'PAYMENT-THANK YOU': kind 'payment', hasCR true.\\n" +
+    "- 'CASHBACK ...': kind 'refund', hasCR true.\\n" +
+    "- Installment rows (e.g. 'CHANEL HONG KONG 1/ 6 669,913.91'): kind 'purchase', hasCR false; amount is the installment figure.\\n" +
+    "- A CR row for a purchase merchant (e.g. 'CHANEL HONG KONG... 4,019,483.43 CR'): kind 'refund', hasCR true (return/reversal).\\n" +
+    "BOTH statement types \u2014 kind rules:\\n" +
+    "- 'payment': credit card bill payments (PAYMT, PAYMENT-THANK YOU, PEMBAYARAN, THRU E-BANK, PELUNASAN, BILLPAYMENT TO CCARD, KARTU KREDIT/PL).\\n" +
+    "- 'refund': incoming credits, reversals, cashbacks, interest, remittances (CR rows that are NOT payments, REMITTANCE CR, CREDIT INTEREST, OVERBOOKING FROM, DIRECT CREDIT, BUNGA, CASHBACK).\\n" +
+    "- 'transfer': CASA outgoing inter-account moves \u2014 OVERBOOKING TRF TO, TR TO SAVINGS, ATM transfer out, SWITCHING CR, FLAZZ BCA TOPUP. These are NOT expenses.\\n" +
+    "- 'purchase': everything else (direct purchases, fees, WITHHOLDING TAX, QR purchases, installments).\\n" +
+    "SKIP: opening/closing balance rows (LAST BALANCE, Saldo Awal, Saldo Akhir, PREVIOUS BALANCE, OUTSTANDING BALANCE, ENDING BALANCE), totals (SUBTOTAL, Total Kredit, Total Debit, SUB TOTAL, TOTAL TAGIHAN, RINGKASAN TAGIHAN, TOTAL OVERSEAS TRANSACTION), bonus/point summaries, column headers, card/account-number-only rows, page-number stamps (e.g. lone 9-digit numbers like 570618619), END OF STATEMENT, any row whose amount is 0.\\n" +
     "Return [] if you find none.";
   const block = isPdf ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } } : { type: "image", source: { type: "base64", media_type: media, data: b64 } };
   const text = await anthropic([block, { type: "text", text: prompt }], 8000);
@@ -325,9 +378,44 @@ async function aiSavingTips(summary) {
 }
 
 /* ----------------------------- small UI ----------------------------- */
-function Card({ children, className = "" }) { return <div className={"bg-white border border-stone-200 rounded-xl " + className}>{children}</div>; }
+function Card({ children, className = "" }) { return <div className={"bg-white rounded-2xl shadow-sm " + className}>{children}</div>; }
 function Num({ children, className = "" }) { return <span className={"num " + className}>{children}</span>; }
 function Pill({ children, color }) { return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium" style={{ backgroundColor: (color || "#78716c") + "1a", color: color || "#57534e" }}>{children}</span>; }
+function ConfirmDialog({ title, body, onConfirm, onCancel, confirmLabel = "Delete", danger = true }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onCancel}>
+      <div className="absolute inset-0 bg-black/40" />
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: danger ? "#F7E9E9" : "#EEF3FE" }}>
+            <AlertTriangle size={18} style={{ color: danger ? "#984447" : "#3B6FD4" }} />
+          </div>
+          <div>
+            <div className="font-semibold text-stone-900">{title}</div>
+            {body && <div className="text-sm text-stone-500 mt-0.5">{body}</div>}
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Btn variant="outline" onClick={onCancel}>Cancel</Btn>
+          <Btn variant={danger ? "danger" : "primary"} onClick={onConfirm}>{confirmLabel}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+function CircleRing({ pct, color, size = 80, stroke = 7, children }) {
+  const r = (size - stroke) / 2; const circ = 2 * Math.PI * r; const filled = Math.min(pct, 100) / 100 * circ;
+  return (
+    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="absolute -rotate-90" style={{ top: 0, left: 0 }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EAECF3" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={`${filled} ${circ}`} strokeLinecap="round" />
+      </svg>
+      <span className="relative z-10 text-xs font-semibold" style={{ color }}>{children}</span>
+    </div>
+  );
+}
+const getGreeting = () => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; };
 function Btn({ children, onClick, variant = "primary", disabled, className = "", type = "button" }) {
   const base = "inline-flex items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
   const map = {
@@ -340,6 +428,11 @@ function Btn({ children, onClick, variant = "primary", disabled, className = "",
   return <button type={type} onClick={onClick} disabled={disabled} className={`${base} ${map[variant]} ${className}`}>{children}</button>;
 }
 function Field({ label, children }) { return <label className="block"><span className="block text-xs font-medium text-stone-500 mb-1">{label}</span>{children}</label>; }
+function DecimalInput({ value, onCommit, className, placeholder }) {
+  const [raw, setRaw] = React.useState(value == null ? "" : String(value));
+  React.useEffect(() => { setRaw(value == null ? "" : String(value)); }, [value]);
+  return <input value={raw} onChange={(e) => setRaw(e.target.value)} onBlur={() => { const n = parseFloat(raw) || 0; setRaw(String(n)); onCommit(n); }} className={className} inputMode="decimal" placeholder={placeholder} />;
+}
 const inputCls = "w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white fp-input";
 
 function ScopeSelect({ value, onChange, scopes, scopeColor, bare }) {
@@ -363,11 +456,30 @@ function App({ user }) {
   const [parties, setParties] = useState([]);
   const [tripMeta, setTripMeta] = useState({});
   const [statements, setStatements] = useState([]);
+  const [balanceHistory, setBalanceHistory] = useState([]);
+  const [importHistory, setImportHistory] = useState([]);
   const [drafts, setDrafts] = useState([]);
   const [month, setMonth] = useState(monthKey(new Date().toISOString()));
   const [periodMode, setPeriodMode] = useState("month");
   const [focusAccount, setFocusAccount] = useState(null);
   const [loadError, setLoadError] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [fxRates, setFxRates] = useState({}); // IDR per 1 unit of each foreign currency
+  const [fxUpdatedAt, setFxUpdatedAt] = useState(null);
+
+  useEffect(() => {
+    fetch("https://open.er-api.com/v6/latest/IDR")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.rates) {
+          const idrPer = {};
+          Object.entries(d.rates).forEach(([c, r]) => { if (r > 0) idrPer[c] = 1 / r; });
+          setFxRates(idrPer);
+          setFxUpdatedAt(new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }));
+        }
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line
 
   useEffect(() => {
     setLoadError(false);
@@ -376,7 +488,7 @@ function App({ user }) {
         const d = await loadAllData(user.id);
         setAccounts(d.accounts); setGoals(d.goals); setMemory(d.memory);
         setScopes(d.scopes || DEFAULT_SCOPES);
-        setSubscriptions(d.subscriptions); setParties(d.parties); setTripMeta(d.tripMeta); setStatements(d.statements);
+        setSubscriptions(d.subscriptions); setParties(d.parties); setTripMeta(d.tripMeta); setStatements(d.statements); setBalanceHistory(d.balanceHistory); setImportHistory(d.importHistory);
         const repaired = d.transactions.map((t) => {
           if (t.direction === "payment") {
             const corrected = classifyDirection(t.desc, t.kind, false);
@@ -393,7 +505,22 @@ function App({ user }) {
       }
     })();
   }, [user.id]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("accounts", user.id, accounts.map((a) => toDbAccount(a, user.id))), 600); return () => clearTimeout(t); }, [accounts, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("accounts", user.id, accounts.map((a) => toDbAccount(a, user.id)), (tbl, msg) => setSyncError(`Save failed (${tbl}): ${msg}`)), 600); return () => clearTimeout(t); }, [accounts, ready]); // eslint-disable-line
+  useEffect(() => { // eslint-disable-line
+    if (!ready) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const t = setTimeout(async () => {
+      const rows = accounts.filter((a) => a.balance != null).map((a) => ({ user_id: user.id, account_id: a.id, balance: a.balance, recorded_at: today }));
+      if (!rows.length) return;
+      const { data } = await supabase.from("balance_history").upsert(rows, { onConflict: "user_id,account_id,recorded_at" }).select();
+      if (data) setBalanceHistory((prev) => {
+        const fresh = data.map(fromDbBalHist);
+        const kept = prev.filter((h) => !(h.recordedAt === today && fresh.some((f) => f.accountId === h.accountId)));
+        return [...fresh, ...kept].sort((a, b) => b.recordedAt.localeCompare(a.recordedAt));
+      });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [accounts, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("transactions", user.id, transactions.map((tx) => toDbTx(tx, user.id))), 600); return () => clearTimeout(t); }, [transactions, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("goals", user.id, goals.map((g) => toDbGoal(g, user.id))), 600); return () => clearTimeout(t); }, [goals, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("subscriptions", user.id, subscriptions.map((s) => toDbSub(s, user.id))), 600); return () => clearTimeout(t); }, [subscriptions, ready]); // eslint-disable-line
@@ -401,6 +528,7 @@ function App({ user }) {
   useEffect(() => { if (!ready) return; const rows = Object.entries(memory).map(([merchant_key, v]) => ({ user_id: user.id, merchant_key, category: v.category || null, scope: v.scope || null, recurring: !!v.recurring })); const t = setTimeout(() => syncTableByKey("memory", user.id, rows, "merchant_key"), 600); return () => clearTimeout(t); }, [memory, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const rows = Object.entries(tripMeta).map(([trip_key, v]) => ({ user_id: user.id, trip_key, purpose: v.purpose || null, banner: v.banner || null, name: v.name || null })); const t = setTimeout(() => syncTableByKey("trip_meta", user.id, rows, "trip_key"), 600); return () => clearTimeout(t); }, [tripMeta, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("statements", user.id, statements.map((s) => toDbStatement(s, user.id))), 600); return () => clearTimeout(t); }, [statements, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("import_history", user.id, importHistory.map((r) => toDbImportHistory(r, user.id))), 600); return () => clearTimeout(t); }, [importHistory, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => supabase.from("profiles").upsert({ id: user.id, scopes }, { onConflict: "id" }).then(({ error: e }) => { if (e) console.error("[db] scopes", e); }), 600); return () => clearTimeout(t); }, [scopes, ready]); // eslint-disable-line
   useEffect(() => { if (ready) saveDrafts(drafts); }, [drafts, ready]);
 
@@ -444,7 +572,7 @@ function App({ user }) {
   );
 
   const visibleTabs = [
-    ["overview", "Overview", LayoutDashboard],
+    ["overview", "Home", LayoutDashboard],
     ["transactions", "Transactions", ListOrdered],
     ["import", "Import", Upload],
   ];
@@ -459,74 +587,123 @@ function App({ user }) {
     ["about", "About Me", UserCircle],
   ];
   const activeMore = moreTabs.find(([id]) => id === tab);
+  const allSidebarTabs = [...visibleTabs, ...moreTabs];
+  const currentLabel = allSidebarTabs.find(([id]) => id === tab)?.[1] || "FinPlus";
+  const bottomNavTabs = [["overview", "Home", LayoutDashboard], ["transactions", "Transactions", ListOrdered], ["import", "Upload", Upload], ["accountsDetail", "Accounts", Landmark]];
+  const isBottomTab = bottomNavTabs.some(([id]) => id === tab);
 
   const signOut = async () => {
     setMoreOpen(false);
     await supabase.auth.signOut();
   };
 
+  const renderMoreMenu = (positionCls) => (
+    <>
+      <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
+      <div className={`absolute ${positionCls} w-52 bg-white border border-stone-100 rounded-2xl shadow-xl z-40 p-1.5`}>
+        <div className="px-2 pb-1 pt-0.5"><span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Pages</span></div>
+        {moreTabs.map(([id, label, Icon]) => (
+          <button key={id} onClick={() => { setTab(id); setMoreOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm font-medium hover:bg-stone-50 text-left" style={tab === id ? { backgroundColor: BRAND.blueTint, color: BRAND.blueDark } : undefined}>
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+        <div className="my-1.5 border-t border-stone-100" />
+        <button onClick={signOut} className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm font-medium text-left" style={{ color: BRAND.red }} onMouseEnter={e => e.currentTarget.style.backgroundColor = BRAND.redTint} onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
+          <LogOut size={15} /> Sign Out
+        </button>
+      </div>
+    </>
+  );
+
   return (
     <div style={rootStyle}>
       <FontStyle />
-      <header className="border-b border-stone-200 bg-white/80 backdrop-blur sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+
+      {/* ─── Left Sidebar (md+) ─── */}
+      <aside className="hidden md:flex flex-col fixed left-0 top-0 h-full w-56 bg-white border-r border-stone-100 z-20">
+        <div className="p-5 border-b border-stone-100">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: BRAND.blue }}><Wallet size={17} className="text-white" /></div>
             <div className="leading-tight"><div className="font-semibold text-stone-900 tracking-tight">FinPlus</div><div className="text-[11px] text-stone-400 -mt-0.5">your money, sorted</div></div>
           </div>
-          <div className="flex items-center gap-2">
-            <MonthPicker months={months} month={month} setMonth={pickMonth} />
-            <div className="relative">
-              <button onClick={() => setMoreOpen((o) => !o)} className="relative border border-stone-300 rounded-lg p-2 bg-white hover:bg-stone-50" aria-label="More">
-                <Menu size={17} className="text-stone-600" />
-                {activeMore && <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full" style={{ background: BRAND.plum }} />}
-              </button>
-              {moreOpen && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
-                  <div className="absolute right-0 mt-2 w-52 bg-white border border-stone-200 rounded-xl shadow-lg z-40 p-1.5">
-                    <div className="px-2 pb-1 pt-0.5">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Pages</span>
-                    </div>
-                    {moreTabs.map(([id, label, Icon]) => (
-                      <button key={id} onClick={() => { setTab(id); setMoreOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium hover:bg-stone-50 text-left" style={tab === id ? { backgroundColor: BRAND.blueTint, color: BRAND.blueDark } : undefined}>
-                        <Icon size={15} /> {label}
-                      </button>
-                    ))}
-                    <div className="my-1.5 border-t border-stone-200" />
-                    <button onClick={signOut} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium text-left" style={{ color: BRAND.red }} onMouseEnter={e => e.currentTarget.style.backgroundColor = BRAND.redTint} onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
-                      <LogOut size={15} /> Sign Out
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          <div className="mt-3"><MonthPicker months={months} month={month} setMonth={pickMonth} /></div>
         </div>
-        <nav className="max-w-6xl mx-auto px-2 flex gap-1 overflow-x-auto">
-          {visibleTabs.map(([id, label, Icon]) => (
-            <button key={id} onClick={() => setTab(id)} className={"flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors " + (tab === id ? "" : "border-transparent text-stone-500 hover:text-stone-800")} style={tab === id ? { borderColor: BRAND.blue, color: BRAND.blueDark } : undefined}>
-              <Icon size={15} /> {label}
-            </button>
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+          {allSidebarTabs.map(([id, label, Icon], i) => (
+            <React.Fragment key={id}>
+              {i === visibleTabs.length && <div className="my-2 border-t border-stone-100" />}
+              <button onClick={() => setTab(id)} className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors"
+                style={tab === id ? { backgroundColor: BRAND.blueTint, color: BRAND.blueDark } : { color: "#57534e" }}
+                onMouseEnter={e => { if (tab !== id) e.currentTarget.style.backgroundColor = "#f5f5f4"; }}
+                onMouseLeave={e => { if (tab !== id) e.currentTarget.style.backgroundColor = ""; }}>
+                <Icon size={16} /> {label}
+              </button>
+            </React.Fragment>
           ))}
         </nav>
-      </header>
+        <div className="p-3 border-t border-stone-100">
+          <button onClick={signOut} className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors" style={{ color: BRAND.red }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = BRAND.redTint}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
+            <LogOut size={16} /> Sign Out
+          </button>
+        </div>
+      </aside>
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        {activeMore && <h2 className="text-lg font-semibold text-stone-900 mb-4">{activeMore[1]}</h2>}
-        {tab === "overview" && <Overview transactions={transactions} goals={goals} month={month} setTab={setTab} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} periodMode={periodMode} setPeriodMode={setPeriodMode} />}
-        {tab === "transactions" && <Transactions transactions={transactions} setTransactions={setTransactions} accounts={accounts} setAccounts={setAccounts} month={month} learn={learn} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} parties={parties} setTab={setTab} />}
-        {tab === "travel" && <Travel transactions={transactions} setTransactions={setTransactions} accounts={accounts} scopes={scopes} scopeColor={scopeColor} tripMeta={tripMeta} setTripMeta={setTripMeta} defaultScope={defaultScope} />}
-        {tab === "subscriptions" && <Subscriptions subscriptions={subscriptions} setSubscriptions={setSubscriptions} transactions={transactions} setTransactions={setTransactions} learn={learn} scopes={scopes} scopeColor={scopeColor} setTab={setTab} />}
-        {tab === "people" && <People parties={parties} setParties={setParties} transactions={transactions} setTransactions={setTransactions} setTab={setTab} />}
-        {tab === "loans" && <LoansPage accounts={accounts} parties={parties} user={user} />}
-        {tab === "import" && <Importer accounts={accounts} setAccounts={setAccounts} setTransactions={setTransactions} setSubscriptions={setSubscriptions} recall={recall} learn={learn} matchSub={matchSub} setTab={setTab} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} drafts={drafts} setDrafts={setDrafts} />}
-        {tab === "accounts" && <Setup accounts={accounts} setAccounts={setAccounts} transactions={transactions} scopes={scopes} setScopes={setScopes} setTab={setTab} setFocusAccount={setFocusAccount} />}
-        {tab === "accountsDetail" && <AccountsDetail accounts={accounts} setAccounts={setAccounts} transactions={transactions} setTab={setTab} focusAccount={focusAccount} setFocusAccount={setFocusAccount} />}
-        {tab === "goals" && <Goals goals={goals} setGoals={setGoals} transactions={transactions} month={month} />}
-        {tab === "statements" && <StatementsPage accounts={accounts} statements={statements} setStatements={setStatements} />}
-        {tab === "about" && <AboutMe user={user} />}
-      </main>
+      {/* ─── Content wrapper ─── */}
+      <div className="md:ml-56">
+        {/* Thin top header */}
+        <header className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-stone-100 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 md:hidden">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: BRAND.blue }}><Wallet size={15} className="text-white" /></div>
+            <div className="font-semibold text-stone-900 text-sm">FinPlus</div>
+          </div>
+          <div className="hidden md:block text-sm font-semibold text-stone-900">{currentLabel}</div>
+          <div className="flex items-center gap-2">
+            <MonthPicker months={months} month={month} setMonth={pickMonth} />
+          </div>
+        </header>
+
+        {syncError && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm" style={{ background: BRAND.redTint, color: BRAND.redDark }}>
+            <span><AlertTriangle size={14} className="inline mr-1.5" />{syncError}</span>
+            <button onClick={() => setSyncError("")} className="shrink-0 font-medium underline">Dismiss</button>
+          </div>
+        )}
+        <main className="px-4 py-5 pb-24 md:pb-8 max-w-5xl mx-auto">
+          {activeMore && <h2 className="text-lg font-semibold text-stone-900 mb-4">{activeMore[1]}</h2>}
+          {tab === "overview" && <Overview transactions={transactions} goals={goals} month={month} setTab={setTab} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} periodMode={periodMode} setPeriodMode={setPeriodMode} accounts={accounts} user={user} fxRates={fxRates} balanceHistory={balanceHistory} />}
+          {tab === "transactions" && <Transactions transactions={transactions} setTransactions={setTransactions} accounts={accounts} setAccounts={setAccounts} month={month} learn={learn} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} parties={parties} setTab={setTab} />}
+          {tab === "travel" && <Travel transactions={transactions} setTransactions={setTransactions} accounts={accounts} scopes={scopes} scopeColor={scopeColor} tripMeta={tripMeta} setTripMeta={setTripMeta} defaultScope={defaultScope} />}
+          {tab === "subscriptions" && <Subscriptions subscriptions={subscriptions} setSubscriptions={setSubscriptions} transactions={transactions} setTransactions={setTransactions} learn={learn} scopes={scopes} scopeColor={scopeColor} setTab={setTab} />}
+          {tab === "people" && <People parties={parties} setParties={setParties} transactions={transactions} setTransactions={setTransactions} setTab={setTab} />}
+          {tab === "loans" && <LoansPage accounts={accounts} parties={parties} user={user} />}
+          {tab === "import" && <Importer accounts={accounts} setAccounts={setAccounts} setTransactions={setTransactions} setSubscriptions={setSubscriptions} recall={recall} learn={learn} matchSub={matchSub} setTab={setTab} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} drafts={drafts} setDrafts={setDrafts} importHistory={importHistory} onImported={(meta) => setImportHistory((prev) => [{ id: uid(), ...meta, importedAt: new Date().toISOString() }, ...prev])} />}
+          {tab === "accounts" && <Setup accounts={accounts} setAccounts={setAccounts} transactions={transactions} scopes={scopes} setScopes={setScopes} setTab={setTab} setFocusAccount={setFocusAccount} />}
+          {tab === "accountsDetail" && <AccountsDetail accounts={accounts} setAccounts={setAccounts} transactions={transactions} setTab={setTab} focusAccount={focusAccount} setFocusAccount={setFocusAccount} fxRates={fxRates} fxUpdatedAt={fxUpdatedAt} balanceHistory={balanceHistory} />}
+          {tab === "goals" && <Goals goals={goals} setGoals={setGoals} transactions={transactions} month={month} />}
+          {tab === "statements" && <StatementsPage accounts={accounts} statements={statements} setStatements={setStatements} />}
+          {tab === "about" && <AboutMe user={user} />}
+        </main>
+      </div>
+
+      {/* ─── Bottom nav (mobile only) ─── */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-white/95 backdrop-blur border-t border-stone-100 z-20 flex items-center justify-around px-1">
+        {bottomNavTabs.map(([id, label, Icon]) => (
+          <button key={id} onClick={() => setTab(id)} className="flex flex-col items-center gap-0.5 py-1.5 flex-1 rounded-xl transition-colors" style={{ color: tab === id ? BRAND.blue : "#a8a29e" }}>
+            <Icon size={20} strokeWidth={tab === id ? 2.5 : 1.75} />
+            <span className="text-[10px] font-medium">{label}</span>
+          </button>
+        ))}
+        <div className="relative flex-1">
+          <button onClick={() => setMoreOpen((o) => !o)} className="flex flex-col items-center gap-0.5 py-1.5 w-full rounded-xl transition-colors"
+            style={{ color: (!isBottomTab && activeMore) ? BRAND.blue : "#a8a29e" }}>
+            <Menu size={20} strokeWidth={1.75} />
+            <span className="text-[10px] font-medium">More</span>
+          </button>
+          {moreOpen && renderMoreMenu("bottom-14 right-0 mb-1")}
+        </div>
+      </nav>
     </div>
   );
 }
@@ -536,7 +713,8 @@ function MonthPicker({ months, month, setMonth }) {
 }
 
 /* ----------------------------- OVERVIEW ----------------------------- */
-function Overview({ transactions, goals, month, setTab, scopes, scopeColor, defaultScope, periodMode, setPeriodMode }) {
+function Overview({ transactions, goals, month, setTab, scopes, scopeColor, defaultScope, periodMode, setPeriodMode, accounts, user, fxRates = {}, balanceHistory = [] }) {
+  const [spendView, setSpendView] = useState("total");
   const inMonth = useMemo(() => transactions.filter((t) => monthKey(t.date) === month), [transactions, month]);
   const monthExpenses = inMonth.filter((t) => t.direction === "expense");
 
@@ -553,13 +731,15 @@ function Overview({ transactions, goals, month, setTab, scopes, scopeColor, defa
 
   const expenses = inPeriodTx.filter((t) => t.direction === "expense");
   const spent = expenses.reduce((a, t) => a + netOf(t), 0);
+  const personalSpent = expenses.filter((t) => t.scope !== "work").reduce((a, t) => a + netOf(t), 0);
   const income = inPeriodTx.filter((t) => t.direction === "income").reduce((a, t) => a + t.amount, 0);
   const payments = inPeriodTx.filter((t) => t.direction === "payment").reduce((a, t) => a + t.amount, 0);
   const delta = prevSpent ? ((spent - prevSpent) / prevSpent) * 100 : 0;
   const owedPeriod = expenses.reduce((a, t) => a + (t.splits || []).filter((s) => !s.paid).reduce((b, s) => b + (Number(s.amount) || 0), 0), 0);
   const owedPeople = new Set(expenses.flatMap((t) => (t.splits || []).filter((s) => !s.paid).map((s) => s.partyId))).size;
 
-  const byCategory = useMemo(() => { const map = {}; expenses.forEach((t) => (map[t.category || "Other"] = (map[t.category || "Other"] || 0) + netOf(t))); return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value); }, [expenses]);
+  const CHART_EXCLUDE_CATS = ["Card Payment", "Transfers"];
+  const byCategory = useMemo(() => { const map = {}; expenses.filter((t) => !CHART_EXCLUDE_CATS.includes(t.category)).forEach((t) => (map[t.category || "Other"] = (map[t.category || "Other"] || 0) + netOf(t))); return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value); }, [expenses]);
   const byScope = useMemo(() => { const map = {}; expenses.forEach((t) => { const s = t.scope || defaultScope; map[s] = (map[s] || 0) + netOf(t); }); return Object.entries(map).map(([name, value]) => ({ name, value })).filter((s) => s.value > 0).sort((a, b) => b.value - a.value); }, [expenses, defaultScope]);
   const trendByDay = periodMode === "month";
   const trend = useMemo(() => {
@@ -569,18 +749,76 @@ function Overview({ transactions, goals, month, setTab, scopes, scopeColor, defa
   }, [expenses, trendByDay]);
   const topMerchants = useMemo(() => { const map = {}; expenses.forEach((t) => (map[t.desc] = (map[t.desc] || 0) + netOf(t))); return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5); }, [expenses]);
 
+  const toIdrFx = (amount, currency) => { if (!currency || currency === "IDR") return amount; const rate = fxRates[currency]; return rate ? amount * rate : amount; };
+  const totalDebitBalance = useMemo(() => (accounts || []).filter((a) => a.type === "debit").reduce((s, a) => s + toIdrFx(Number(a.balance) || 0, a.currency), 0), [accounts, fxRates]); // eslint-disable-line
+  const totalInvestmentBalance = useMemo(() => (accounts || []).filter((a) => a.type === "investment").reduce((s, a) => s + toIdrFx(Number(a.balance) || 0, a.currency), 0), [accounts, fxRates]); // eslint-disable-line
+  const netWorthHistory = useMemo(() => {
+    const dateMap = {};
+    balanceHistory.forEach((h) => {
+      const acc = (accounts || []).find((a) => a.id === h.accountId);
+      if (!acc || (acc.type !== "debit" && acc.type !== "investment")) return;
+      dateMap[h.recordedAt] = (dateMap[h.recordedAt] || 0) + h.balance;
+    });
+    return Object.entries(dateMap).map(([date, value]) => ({ date: date.slice(5).replace("-", "/"), value })).sort((a, b) => a.date.localeCompare(b.date));
+  }, [balanceHistory, accounts]);
+  const displayName = user?.email?.split("@")[0] || "there";
+
   if (!transactions.length) return <Empty icon={LayoutDashboard} title="Nothing here yet" body="Set up an account, then import a statement to see your spending come to life." action={<Btn onClick={() => setTab("import")}><Upload size={15} /> Import transactions</Btn>} />;
 
   const PERIODS = [["month", "Monthly"], ["quarter", "Quarterly"], ["ytd", "YTD"]];
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-stone-500">{getGreeting()}, {displayName}</p>
+          <p className="text-2xl font-bold text-stone-900">{idr(totalDebitBalance + totalInvestmentBalance)}</p>
+          <p className="text-xs text-stone-400 mt-0.5">Savings + investments</p>
+          {totalInvestmentBalance > 0 && (
+            <div className="flex gap-3 mt-1">
+              <span className="text-xs text-stone-400">Savings: <span className="font-medium text-stone-600">{idr(totalDebitBalance)}</span></span>
+              <span className="text-xs text-stone-400">Invested: <span className="font-medium" style={{ color: BRAND.gold }}>{idr(totalInvestmentBalance)}</span></span>
+            </div>
+          )}
+        </div>
+        <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: BRAND.blueTint }}>
+          <UserCircle size={22} style={{ color: BRAND.blue }} />
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Your spend" value={idr(spent)} accent={BRAND.red} sub={prevSpent ? `${delta >= 0 ? "+" : ""}${delta.toFixed(0)}% ${periodCompareLabel(periodMode)}` : null} subColor={delta > 0 ? BRAND.red : BRAND.success} />
+        <Card className="p-4 overflow-hidden">
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <div className="text-xs font-medium text-stone-400 uppercase tracking-wide">Your spend</div>
+            <div className="flex gap-0.5">
+              {[["total", "Total"], ["personal", "Personal"]].map(([v, l]) => (
+                <button key={v} onClick={() => setSpendView(v)} className="px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors" style={spendView === v ? { background: BRAND.blueTint, color: BRAND.blue } : { color: "#a8a29e" }}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div className="block text-lg font-semibold break-all leading-tight" style={{ color: BRAND.red }}>{idr(spendView === "personal" ? personalSpent : spent)}</div>
+          {spendView === "total" && prevSpent ? <div className="text-xs mt-0.5" style={{ color: delta > 0 ? BRAND.red : BRAND.success }}>{delta >= 0 ? "+" : ""}{delta.toFixed(0)}% {periodCompareLabel(periodMode)}</div> : null}
+        </Card>
         <Stat label="Credits in" value={idr(income)} accent={BRAND.blue} />
         <Stat label="Card payments" value={idr(payments)} accent={BRAND.slate} />
         <Stat label="Transactions" value={inPeriodTx.length} accent={BRAND.plum} />
       </div>
+
+      {netWorthHistory.length >= 2 && (
+        <Card className="p-4">
+          <h3 className="text-sm font-semibold text-stone-800 mb-3">Net worth over time</h3>
+          <ResponsiveContainer width="100%" height={140}>
+            <AreaChart data={netWorthHistory} margin={{ left: -18, right: 8 }}>
+              <defs><linearGradient id="nwg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={BRAND.gold} stopOpacity={0.25} /><stop offset="100%" stopColor={BRAND.gold} stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0efed" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#a8a29e" }} axisLine={false} tickLine={false} />
+              <YAxis width={46} tick={{ fontSize: 10, fill: "#a8a29e" }} axisLine={false} tickLine={false} tickFormatter={(v) => v === 0 ? "0" : v >= 1e9 ? (v / 1e9).toFixed(1) + "M" : v >= 1e6 ? (v / 1e6).toFixed(0) + "jt" : Math.round(v / 1e3) + "rb"} />
+              <Tooltip formatter={(v) => idr(v)} />
+              <Area type="monotone" dataKey="value" stroke={BRAND.gold} strokeWidth={2} fill="url(#nwg)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
 
       <div className="flex items-center gap-2 py-1">
         <div className="h-px flex-1 bg-stone-200" />
@@ -630,19 +868,31 @@ function Overview({ transactions, goals, month, setTab, scopes, scopeColor, defa
           <h3 className="text-sm font-semibold text-stone-800 mb-3">{trendByDay ? "Daily spend" : "Spend by month"}</h3>
           {trend.length ? (
             <ResponsiveContainer width="100%" height={160}>
-              <AreaChart data={trend} margin={{ left: -18, right: 8 }}>
+              <AreaChart data={trend} margin={{ left: 0, right: 8, top: 4 }}>
                 <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={BRAND.blue} stopOpacity={0.25} /><stop offset="100%" stopColor={BRAND.blue} stopOpacity={0} /></linearGradient></defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0efed" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#a8a29e" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "#a8a29e" }} axisLine={false} tickLine={false} tickFormatter={(v) => (v >= 1e6 ? v / 1e6 + "jt" : v / 1e3 + "rb")} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#a8a29e" }} axisLine={false} tickLine={false} interval={trendByDay ? Math.ceil(trend.length / 8) - 1 : 0} />
+                <YAxis width={46} tick={{ fontSize: 10, fill: "#a8a29e" }} axisLine={false} tickLine={false} tickFormatter={(v) => v === 0 ? "0" : v >= 1e9 ? (v / 1e9).toFixed(1) + "M" : v >= 1e6 ? (v / 1e6).toFixed(0) + "jt" : Math.round(v / 1e3) + "rb"} />
                 <Tooltip formatter={(v) => idr(v)} /><Area type="monotone" dataKey="value" stroke={BRAND.blue} strokeWidth={2} fill="url(#g)" />
               </AreaChart>
             </ResponsiveContainer>
           ) : <Muted>No expenses in this period.</Muted>}
         </Card>
-        <Card className="p-4">
+        <Card className="p-4 overflow-hidden">
           <h3 className="text-sm font-semibold text-stone-800 mb-3">Top merchants</h3>
-          {topMerchants.length ? <ul className="space-y-2.5">{topMerchants.map((m, i) => <li key={i} className="flex items-center justify-between gap-2 text-sm"><span className="truncate text-stone-700">{m.name}</span><Num className="text-stone-900 font-medium">{idr(m.value)}</Num></li>)}</ul> : <Muted>No expenses in this period.</Muted>}
+          {topMerchants.length ? (
+            <ul className="space-y-2.5">
+              {topMerchants.map((m, i) => {
+                const short = m.name.length > 24 ? m.name.slice(0, 24) + "…" : m.name;
+                return (
+                  <li key={i} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="text-stone-700 truncate shrink">{short}</span>
+                    <span className="text-stone-900 font-medium shrink-0 whitespace-nowrap">{idr(m.value)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : <Muted>No expenses in this period.</Muted>}
         </Card>
       </div>
 
@@ -652,7 +902,7 @@ function Overview({ transactions, goals, month, setTab, scopes, scopeColor, defa
   );
 }
 
-function Stat({ label, value, sub, accent, subColor }) { return <Card className="p-4"><div className="text-xs font-medium text-stone-400 uppercase tracking-wide">{label}</div><Num className="block text-xl md:text-2xl font-semibold mt-1"><span style={{ color: accent }}>{value}</span></Num>{sub && <div className="text-xs mt-0.5" style={{ color: subColor }}>{sub}</div>}</Card>; }
+function Stat({ label, value, sub, accent, subColor }) { return <Card className="p-4 overflow-hidden"><div className="text-xs font-medium text-stone-400 uppercase tracking-wide truncate">{label}</div><div className="block text-lg font-semibold mt-1 break-all leading-tight" style={{ color: accent }}>{value}</div>{sub && <div className="text-xs mt-0.5" style={{ color: subColor }}>{sub}</div>}</Card>; }
 function Muted({ children }) { return <div className="text-sm text-stone-400 py-6 text-center">{children}</div>; }
 
 function GoalStrip({ goals, expenses, income, spent, setTab }) {
@@ -674,7 +924,8 @@ function GoalStrip({ goals, expenses, income, spent, setTab }) {
 
 function Coach({ summary, hasData }) {
   const [tips, setTips] = useState(null); const [loading, setLoading] = useState(false); const [err, setErr] = useState("");
-  const run = async () => { setLoading(true); setErr(""); try { const compact = { spent: summary.spent, credits: summary.income, lastMonthSpent: summary.prevSpent, topCategories: summary.byCategory.slice(0, 8), byScope: summary.byScope, goals: summary.goals.map((g) => ({ name: g.name, limit: g.limit, target: g.target })) }; setTips(await aiSavingTips(compact)); } catch (e) { setErr(e.message); } finally { setLoading(false); } };
+  const COACH_EXCLUDE = ["Card Payment", "Transfers", "Subscriptions"];
+  const run = async () => { setLoading(true); setErr(""); try { const compact = { spent: summary.spent, credits: summary.income, lastMonthSpent: summary.prevSpent, topCategories: summary.byCategory.filter((c) => !COACH_EXCLUDE.includes(c.name)).slice(0, 8), byScope: summary.byScope, goals: summary.goals.map((g) => ({ name: g.name, limit: g.limit, target: g.target })) }; setTips(await aiSavingTips(compact)); } catch (e) { setErr(e.message); } finally { setLoading(false); } };
   const pc = { high: BRAND.red, medium: BRAND.gold, low: BRAND.olive };
   return (
     <Card className="p-4">
@@ -765,7 +1016,8 @@ function Transactions({ transactions, setTransactions, accounts, setAccounts, mo
                   <td className="p-2"><ScopeSelect value={t.scope || defaultScope} onChange={(e) => update(t.id, { scope: e.target.value })} scopes={scopes} scopeColor={scopeColor} bare /></td>
                   <td className="p-2"><SplitBadge t={t} onClick={() => setSplitOpen(splitOpen === t.id ? null : t.id)} /></td>
                   <td className="p-2 text-right pr-3 whitespace-nowrap">
-                    <Num className="font-medium" style={{ color: t.direction === "income" ? BRAND.success : t.direction === "payment" ? "#a8a29e" : "#1c1917" }}>{t.direction === "income" ? "+" : t.direction === "payment" ? "" : "−"}{idr(t.amount)}</Num>
+                    <Num className="font-medium" style={{ color: t.direction === "income" ? BRAND.success : t.direction === "payment" ? "#a8a29e" : t.direction === "transfer" ? BRAND.slate : "#1c1917" }}>{t.direction === "income" ? "+" : t.direction === "payment" || t.direction === "transfer" ? "" : "−"}{idr(t.amount)}</Num>
+                    {t.direction === "transfer" && <div className="text-[10px] text-stone-400">transfer</div>}
                     {t.direction === "expense" && net !== t.amount && <div className="text-[11px] fp-text-success">your share {idr(net)}</div>}
                   </td>
                   <td className="p-2"><Btn variant="danger" onClick={() => del(t.id)}><Trash2 size={14} /></Btn></td>
@@ -1181,29 +1433,35 @@ function People({ parties, setParties, transactions, setTransactions, setTab }) 
 }
 
 /* ----------------------------- IMPORT ----------------------------- */
-function Importer({ accounts, setAccounts, setTransactions, setSubscriptions, recall, learn, matchSub, setTab, scopes, scopeColor, defaultScope, drafts, setDrafts }) {
+function Importer({ accounts, setAccounts, setTransactions, setSubscriptions, recall, learn, matchSub, setTab, scopes, scopeColor, defaultScope, drafts, setDrafts, importHistory = [], onImported }) {
   const [mode, setMode] = useState("file"); const [acctId, setAcctId] = useState(accounts[0]?.id || ""); const [busy, setBusy] = useState(""); const [err, setErr] = useState("");
+  const [pendingFile, setPendingFile] = useState(null); // { name, hash, size } — set after hash computed, used at save time
+  const [dupWarning, setDupWarning] = useState(null); // existing import_history record + file reference
   useEffect(() => { if (!acctId && accounts[0]) setAcctId(accounts[0].id); }, [accounts]); // eslint-disable-line
   const selectedAccount = accounts.find((a) => a.id === acctId);
   const enrichItems = (items) => items.map((d) => {
     const amount = Math.abs(Number(d.amount) || 0);
-    const direction = d.direction === "income" || d.direction === "payment" || d.direction === "expense"
+    const direction = ["income", "payment", "expense", "transfer"].includes(d.direction)
       ? d.direction
-      : classifyDirection(d.desc, d.kind, d.hasCR);
+      : classifyDirection(d.desc, d.kind, d.hasCR, selectedAccount?.type);
     const isPay = direction === "payment";
     const sub = direction === "expense" ? matchSub(d.desc, d.fx) : null; const mem = recall(d.desc); const en = enrich(d.desc);
     const incomeCat = /salary|gaji|payroll/i.test(d.desc || "") ? "Salary" : "Income";
-    return { id: uid(), date: d.date, desc: d.desc || "Unknown", amount, direction, fx: d.fx || "", payer: d.payer || "", category: isPay ? "Card Payment" : direction === "income" ? incomeCat : (sub ? sub.category : (mem?.category || en?.category || "")), scope: sub ? sub.scope : (mem?.scope || en?.scope || defaultScope), recurring: sub ? true : !!(mem?.recurring || en?.recurring), accountId: acctId, splits: [], _include: true, _reappeared: !!(sub && sub.status === "cancelled") };
+    const defaultCat = isPay ? "Card Payment" : direction === "income" ? incomeCat : direction === "transfer" ? "Transfers" : (sub ? sub.category : (mem?.category || en?.category || ""));
+    return { id: uid(), date: d.date, desc: d.desc || "Unknown", amount, direction, fx: d.fx || "", payer: d.payer || "", category: defaultCat, scope: sub ? sub.scope : (mem?.scope || en?.scope || defaultScope), recurring: sub ? true : !!(mem?.recurring || en?.recurring), accountId: acctId, splits: [], _include: true, _reappeared: !!(sub && sub.status === "cancelled") };
   }).filter((x) => x.amount > 0);
-  const onFile = async (e) => { const file = e.target.files?.[0]; if (!file) return; setErr(""); setBusy("Reading your statement…"); try { const raw = await extractFromFile(file); if (!raw.length) { setErr("No transactions found. Try a clearer file, or paste the rows as CSV."); setBusy(""); return; } const dated = raw.map((r) => ({ ...r, date: parseIndoDate(r.date) })); setDrafts(enrichItems(dated)); setBusy(""); } catch (e2) { setErr(e2.message); setBusy(""); } e.target.value = ""; };
+  const proceedWithExtract = async (file, hash) => { setBusy("Reading your statement…"); try { const raw = await extractFromFile(file); if (!raw.length) { setErr("No transactions found. Try a clearer file, or paste the rows as CSV."); setBusy(""); return; } const dated = raw.map((r) => ({ ...r, date: parseIndoDate(r.date) })); setDrafts(enrichItems(dated)); setPendingFile({ name: file.name, hash, size: file.size }); setBusy(""); } catch (e2) { setErr(e2.message); setBusy(""); } };
+  const onFile = async (e) => { const file = e.target.files?.[0]; if (!file) return; setErr(""); setBusy("Checking file…"); e.target.value = ""; const hash = await hashFile(file); const existing = importHistory.find((r) => r.fileHash === hash); if (existing) { setDupWarning({ ...existing, _file: file, _hash: hash }); setBusy(""); return; } await proceedWithExtract(file, hash); };
   const onCSV = (text) => { setErr(""); const lines = text.trim().split(/\r?\n/).filter(Boolean); if (!lines.length) return; const hasHeader = /date|amount|desc|tanggal|jumlah|keterangan/.test(lines[0].toLowerCase()); const body = hasHeader ? lines.slice(1) : lines; const items = body.map((line) => { const cols = splitCSV(line); const amt = parseFloat((cols[2] ?? cols[cols.length - 1] ?? "0").toString().replace(/[^\d.-]/g, "")) || 0; return { date: normDate((cols[0] || "").trim()), desc: (cols[1] || cols[0] || "").trim(), amount: Math.abs(amt), kind: "purchase" }; }).filter((i) => i.amount > 0); if (!items.length) { setErr("Couldn't read any rows. Expected: date, description, amount."); return; } setDrafts(enrichItems(items)); };
   const autoTag = async () => { const need = drafts.map((d, i) => ({ i, d })).filter((x) => !x.d.category && x.d.direction === "expense"); if (!need.length) return; setBusy("Tagging categories…"); setErr(""); try { const cats = await aiCategorize(need.map((x) => x.d.desc)); setDrafts((prev) => { const next = [...prev]; need.forEach((x, k) => { if (cats[k] && CATEGORIES.includes(cats[k])) next[x.i] = { ...next[x.i], category: cats[k] }; }); return next; }); } catch (e) { setErr(e.message); } finally { setBusy(""); } };
   const save = () => {
-    const keep = drafts.filter((d) => d._include).map(({ _include, _reappeared, ...t }) => ({ ...t, category: t.category || (t.direction === "payment" ? "Card Payment" : "Other") }));
+    const keep = drafts.filter((d) => d._include).map(({ _include, _reappeared, ...t }) => ({ ...t, category: t.category || (t.direction === "payment" ? "Card Payment" : t.direction === "transfer" ? "Transfers" : "Other") }));
     keep.forEach((t) => learn(t.desc, t.category, t.scope, t.recurring));
     setSubscriptions((prev) => { const next = [...prev]; keep.filter((t) => t.recurring && t.direction === "expense").forEach((t) => { const key = merchantKey(t.desc); const plan = planOf(t); const idx = next.findIndex((s) => s.key === key && (s.plan || "") === plan); if (idx >= 0) next[idx] = { ...next[idx], monthly: t.amount, name: t.desc, status: "active", cancelledAt: null }; else next.push({ id: uid(), key, plan, name: t.desc, category: t.category, scope: t.scope, monthly: t.amount, status: "active", cancelledAt: null }); }); return next; });
     setAccounts((prev) => keep.reduce((accs, t) => applyBalanceDelta(accs, t.accountId, signedAmount(t)), prev));
-    setTransactions((prev) => [...prev, ...keep]); setDrafts([]); setTab("transactions");
+    setTransactions((prev) => [...prev, ...keep]);
+    if (pendingFile && onImported) { onImported({ fileName: pendingFile.name, fileHash: pendingFile.hash, fileSize: pendingFile.size, accountId: acctId, accountName: selectedAccount?.name || "", txCount: keep.length }); }
+    setPendingFile(null); setDrafts([]); setTab("transactions");
   };
   const editDraft = (id, patch) => setDrafts((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
   if (!accounts.length) return <Empty icon={CreditCard} title="Set up an account first" body="Tell FinPlus which bank or wallet this is (credit, debit, QRIS, etc.) so imports land in the right place." action={<Btn onClick={() => setTab("accounts")}><Plus size={15} /> Go to Setup</Btn>} />;
@@ -1220,9 +1478,40 @@ function Importer({ accounts, setAccounts, setTransactions, setSubscriptions, re
             <div className="flex gap-1 bg-stone-100 rounded-lg p-1">{[["file", "Upload file", FileText], ["csv", "Paste CSV", ListOrdered], ["manual", "Add one", Plus]].map(([m, label, Icon]) => <button key={m} onClick={() => setMode(m)} className={"flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium " + (mode === m ? "bg-white text-stone-900 shadow-sm" : "text-stone-500")}><Icon size={14} /> {label}</button>)}</div>
           </div></Card>
           {mode === "file" && <Card className="p-6 text-center border-dashed"><input id="file" type="file" accept="application/pdf,image/*" onChange={onFile} className="hidden" /><label htmlFor="file" className="cursor-pointer inline-flex flex-col items-center gap-2"><div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: BRAND.blueTint }}>{busy ? <Loader2 size={22} className="animate-spin" style={{ color: BRAND.blue }} /> : <Upload size={22} style={{ color: BRAND.blue }} />}</div><span className="text-sm font-medium text-stone-800">{busy || "Upload a card or bank statement"}</span><span className="text-xs text-stone-400">PDF or photo · detects expenses vs. money-in automatically</span></label><p className="text-[11px] text-stone-400 mt-4 max-w-md mx-auto">The file is sent to Claude to extract the rows. For anything you'd rather keep on-device, use Paste CSV or Add one.</p></Card>}
+          {dupWarning && (
+            <div className="rounded-xl px-4 py-3 flex flex-wrap items-start justify-between gap-3" style={{ background: BRAND.goldTint, border: `1px solid ${BRAND.goldLight}` }}>
+              <div>
+                <div className="font-semibold text-sm text-stone-800 flex items-center gap-1.5"><AlertTriangle size={14} style={{ color: BRAND.gold }} /> Already imported</div>
+                <div className="text-xs text-stone-600 mt-1"><span className="font-medium">{dupWarning.fileName}</span> was imported {relDate(dupWarning.importedAt)} into <span className="font-medium">{dupWarning.accountName}</span> ({dupWarning.txCount} transactions).</div>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Btn variant="outline" className="text-xs py-1" onClick={() => setDupWarning(null)}>Cancel</Btn>
+                <Btn variant="outline" className="text-xs py-1" onClick={() => { const { _file, _hash, ..._ } = dupWarning; setDupWarning(null); proceedWithExtract(_file, _hash); }}>Import anyway</Btn>
+              </div>
+            </div>
+          )}
           {mode === "csv" && <CSVPaste onParse={onCSV} />}
           {mode === "manual" && <ManualAdd onAdd={(t) => setDrafts(enrichItems([t]))} />}
           {err && <div className="text-sm" style={{ color: BRAND.red }}>{err}</div>}
+          {importHistory.length > 0 && (
+            <Card className="p-4">
+              <h3 className="text-sm font-semibold text-stone-800 mb-3">Import history</h3>
+              <div className="space-y-2.5">
+                {importHistory.slice(0, 10).map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-3 text-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText size={13} className="shrink-0 text-stone-400" />
+                      <span className="truncate text-stone-700 text-xs">{r.fileName}</span>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-xs text-stone-500">{r.accountName}</div>
+                      <div className="text-[11px] text-stone-400">{relDate(r.importedAt)} · {r.txCount} tx</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
         </>
       ) : (
         <Card className="p-4 space-y-3">
@@ -1239,7 +1528,7 @@ function Importer({ accounts, setAccounts, setTransactions, setSubscriptions, re
                 <td className="p-2"><input type="checkbox" checked={d._include} onChange={(e) => editDraft(d.id, { _include: e.target.checked })} className="fp-accent-brand" /></td>
                 <td className="p-2"><input value={d.date} onChange={(e) => editDraft(d.id, { date: e.target.value })} className="num w-24 border border-transparent hover:border-stone-300 rounded px-1 py-0.5 fp-input" /></td>
                 <td className="p-2">
-                  <div className="flex items-center gap-1">{d.direction === "income" ? <ArrowDownLeft size={13} className="fp-text-success shrink-0" /> : d.direction === "payment" ? null : <ArrowUpRight size={13} className="text-stone-300 shrink-0" />}<input value={d.desc} onChange={(e) => editDraft(d.id, { desc: e.target.value })} className="w-full min-w-[140px] border border-transparent hover:border-stone-300 rounded px-1 py-0.5 fp-input" />{d.fx && <span className="text-[11px] text-stone-400 num ml-1">{d.fx}</span>}</div>
+                  <div className="flex items-center gap-1">{d.direction === "income" ? <ArrowDownLeft size={13} className="fp-text-success shrink-0" /> : d.direction === "payment" || d.direction === "transfer" ? null : <ArrowUpRight size={13} className="text-stone-300 shrink-0" />}<input value={d.desc} onChange={(e) => editDraft(d.id, { desc: e.target.value })} className="w-full min-w-[140px] border border-transparent hover:border-stone-300 rounded px-1 py-0.5 fp-input" />{d.fx && <span className="text-[11px] text-stone-400 num ml-1">{d.fx}</span>}</div>
                   {d.direction === "income" && <input value={d.payer} onChange={(e) => editDraft(d.id, { payer: e.target.value })} placeholder="From whom? (e.g. PT Acme — payroll)" className="mt-1 w-full min-w-[140px] text-xs border border-stone-200 rounded px-1.5 py-0.5 fp-input" />}
                 </td>
                 <td className="p-2">
@@ -1250,7 +1539,7 @@ function Importer({ accounts, setAccounts, setTransactions, setSubscriptions, re
                 </td>
                 <td className="p-2"><ScopeSelect value={d.scope} onChange={(e) => editDraft(d.id, { scope: e.target.value })} scopes={scopes} scopeColor={scopeColor} /></td>
                 <td className="p-2 text-center"><input type="checkbox" checked={d.recurring} onChange={(e) => editDraft(d.id, { recurring: e.target.checked })} className="fp-accent-accent2" /></td>
-                <td className="p-2 text-right whitespace-nowrap"><select value={d.direction} onChange={(e) => editDraft(d.id, { direction: e.target.value, category: e.target.value === "income" ? "Income" : e.target.value === "payment" ? "Card Payment" : "" })} className="text-xs text-stone-400 border-0 focus:outline-none bg-transparent mr-1"><option value="expense">− expense</option><option value="income">+ income</option><option value="payment">payment</option></select><input value={d.amount} onChange={(e) => editDraft(d.id, { amount: parseFloat(e.target.value.replace(/[^\d.]/g, "")) || 0 })} className="num w-28 text-right border border-transparent hover:border-stone-300 rounded px-1 py-0.5 fp-input" /></td>
+                <td className="p-2 text-right whitespace-nowrap"><select value={d.direction} onChange={(e) => editDraft(d.id, { direction: e.target.value, category: e.target.value === "income" ? "Income" : e.target.value === "payment" ? "Card Payment" : e.target.value === "transfer" ? "Transfers" : "" })} className="text-xs text-stone-400 border-0 focus:outline-none bg-transparent mr-1"><option value="expense">− expense</option><option value="income">+ income</option><option value="payment">payment</option><option value="transfer">⇆ transfer</option></select><input value={d.amount} onChange={(e) => editDraft(d.id, { amount: parseFloat(e.target.value.replace(/[^\d.]/g, "")) || 0 })} className="num w-28 text-right border border-transparent hover:border-stone-300 rounded px-1 py-0.5 fp-input" /></td>
               </tr>
             ))}</tbody>
           </table></div>
@@ -1266,17 +1555,18 @@ function ManualAdd({ onAdd }) { const [f, setF] = useState({ date: today(), desc
 /* ----------------------------- SETUP ----------------------------- */
 function Setup({ accounts, setAccounts, transactions, scopes, setScopes, setTab, setFocusAccount }) {
   const [f, setF] = useState({ name: "", bank: "", type: "credit", balance: "", currency: "IDR", linkedAccountId: "" });
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const add = () => {
     if (!f.name) return;
     setAccounts((prev) => [...prev, {
       id: uid(), name: f.name, bank: f.bank, type: f.type, color: ACCOUNT_COLORS[prev.length % ACCOUNT_COLORS.length],
       balance: f.type === "debit" ? (parseFloat(String(f.balance).replace(/[^\d.-]/g, "")) || 0) : undefined,
-      currency: f.type === "debit" ? f.currency : "IDR",
+      currency: f.currency,
       linkedAccountId: f.type === "qris" ? (f.linkedAccountId || null) : undefined,
     }]);
     setF({ name: "", bank: "", type: "credit", balance: "", currency: "IDR", linkedAccountId: "" });
   };
-  const del = (id) => setAccounts((prev) => prev.filter((a) => a.id !== id)); const count = (id) => transactions.filter((t) => t.accountId === id).length;
+  const del = (id) => { setAccounts((prev) => prev.filter((a) => a.id !== id)); setDeleteConfirm(null); }; const count = (id) => transactions.filter((t) => t.accountId === id).length;
   const openDetail = (id) => { setFocusAccount(id); setTab("accountsDetail"); };
   const [q, setQ] = useState(""); const [ft, setFt] = useState("");
   const filtered = accounts.filter((a) => (!ft || a.type === ft) && (!q || (a.name + " " + (a.bank || "")).toLowerCase().includes(q.toLowerCase())));
@@ -1297,11 +1587,9 @@ function Setup({ accounts, setAccounts, transactions, scopes, setScopes, setTab,
             <Field label="Name"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="UOB PRIVIMILES" className={inputCls} /></Field>
             <Field label="Bank / issuer"><input value={f.bank} onChange={(e) => setF({ ...f, bank: e.target.value })} placeholder="UOB, BCA, GoPay…" className={inputCls} /></Field>
             <Field label="Type"><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })} className={inputCls + " capitalize"}>{ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></Field>
+            <Field label="Currency"><select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })} className={inputCls}>{CURRENCY_LIST.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
             {f.type === "debit" && (
-              <>
-                <Field label="Starting balance"><input value={f.balance} onChange={(e) => setF({ ...f, balance: e.target.value })} placeholder="5000000" className={inputCls + " num"} /></Field>
-                <Field label="Currency"><select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })} className={inputCls}>{CURRENCY_LIST.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
-              </>
+              <Field label="Starting balance"><input value={f.balance} onChange={(e) => setF({ ...f, balance: e.target.value })} placeholder="5000000" className={inputCls + " num"} /></Field>
             )}
             {f.type === "qris" && (
               <Field label="Linked debit account">
@@ -1333,12 +1621,21 @@ function Setup({ accounts, setAccounts, transactions, scopes, setScopes, setTab,
               <div className="flex items-center gap-2 shrink-0">
                 <Pill color={a.color}><span className="capitalize">{a.type}</span></Pill>
                 <Btn variant="outline" onClick={() => openDetail(a.id)} className="text-xs py-1.5">Details <ChevronRight size={13} /></Btn>
-                <Btn variant="danger" onClick={() => del(a.id)}><Trash2 size={15} /></Btn>
+                <Btn variant="danger" onClick={() => setDeleteConfirm({ id: a.id, name: a.name })}><Trash2 size={15} /></Btn>
               </div>
             </Card>
           ))}
         </div>
       </div>
+      {deleteConfirm && (
+        <ConfirmDialog
+          title={`Delete "${deleteConfirm.name}"?`}
+          body="All transactions linked to this account will lose their account reference."
+          confirmLabel="Delete account"
+          onConfirm={() => del(deleteConfirm.id)}
+          onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
       <Card className="p-4">
         <h3 className="text-sm font-semibold text-stone-800 mb-1">Spending profiles</h3>
         <p className="text-xs text-stone-400 mb-3">How you split spending — personal, family, friends, work, or your own buckets like "work · part-time".</p>
@@ -1358,20 +1655,60 @@ function Setup({ accounts, setAccounts, transactions, scopes, setScopes, setTab,
 }
 
 /* ----------------------------- MY ACCOUNTS (detail) ----------------------------- */
-function AccountsDetail({ accounts, setAccounts, transactions, setTab, focusAccount, setFocusAccount }) {
-  const [view, setView] = useState(() => { const fa = accounts.find((a) => a.id === focusAccount); return fa && fa.type === "debit" ? "debit" : "credit"; });
-  useEffect(() => { const fa = accounts.find((a) => a.id === focusAccount); if (fa) setView(fa.type === "debit" ? "debit" : "credit"); }, [focusAccount]); // eslint-disable-line
+function AccountsDetail({ accounts, setAccounts, transactions, setTab, focusAccount, setFocusAccount, fxRates, fxUpdatedAt, balanceHistory = [] }) {
+  const [view, setView] = useState(() => { const fa = accounts.find((a) => a.id === focusAccount); return fa ? fa.type : "credit"; });
+  useEffect(() => { const fa = accounts.find((a) => a.id === focusAccount); if (fa) setView(fa.type); }, [focusAccount]); // eslint-disable-line
   const update = (id, patch) => setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
   const intField = (v) => parseFloat(String(v).replace(/[^\d.-]/g, "")) || 0;
+  const [showHistory, setShowHistory] = useState(new Set());
+  const toggleHistory = (id) => setShowHistory((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, name }
+  const confirmDelete = (id, name) => setDeleteConfirm({ id, name });
+  const doDelete = () => { setAccounts((prev) => prev.filter((x) => x.id !== deleteConfirm.id)); setDeleteConfirm(null); };
+  const renderBalanceHistory = (accountId) => {
+    const hist = balanceHistory.filter((h) => h.accountId === accountId).slice(0, 6);
+    if (!hist.length) return null;
+    return (
+      <div className="mt-3 pt-3 border-t border-stone-100">
+        <button onClick={() => toggleHistory(accountId)} className="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600 mb-2">
+          <ChevronRight size={12} className={showHistory.has(accountId) ? "rotate-90 transition-transform" : "transition-transform"} /> Balance history
+        </button>
+        {showHistory.has(accountId) && (
+          <div className="space-y-1.5">
+            {hist.map((h, i) => {
+              const prev = hist[i + 1];
+              const diff = prev ? h.balance - prev.balance : null;
+              return (
+                <div key={h.recordedAt} className="flex items-center justify-between text-xs">
+                  <span className="text-stone-400">{new Date(h.recordedAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  <span className="flex items-center gap-1.5">
+                    <Num className="text-stone-700">{idr(h.balance)}</Num>
+                    {diff !== null && diff !== 0 && <span style={{ color: diff > 0 ? BRAND.success : BRAND.red }} className="font-medium">{diff > 0 ? "▲" : "▼"} {idr(Math.abs(diff))}</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const toIdr = (amount, currency) => { if (!currency || currency === "IDR") return amount; const rate = fxRates[currency]; return rate ? amount * rate : null; };
 
   const credit = accounts.filter((a) => a.type === "credit");
   const debit = accounts.filter((a) => a.type === "debit");
-  const list = view === "credit" ? credit : debit;
+  const investment = accounts.filter((a) => a.type === "investment");
+  const list = view === "credit" ? credit : view === "debit" ? debit : [];
   const balanceOf = (id) => transactions.filter((t) => t.accountId === id);
+
+  const totalDebitIdr = debit.reduce((sum, a) => { const v = toIdr(a.balance || 0, a.currency || "IDR"); return v != null ? sum + v : sum; }, 0);
+  const totalInvestmentIdr = investment.reduce((sum, a) => { const v = toIdr(Number(a.balance) || 0, a.currency || "IDR"); return sum + (v != null ? v : (Number(a.balance) || 0)); }, 0);
+
+  const addInvestment = () => setAccounts((prev) => [...prev, { id: uid(), name: "", bank: "", type: "investment", holder: "Mutual Funds", balance: 0, creditLimit: 0, balanceOwed: 0, points: 0, currency: "IDR", color: BRAND.blue }]);
 
   const Tabs = (
     <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-full p-1 shadow-sm w-fit">
-      {[["credit", "Credit", credit.length], ["debit", "Debit", debit.length]].map(([id, label, n]) => (
+      {[["credit", "Credit", credit.length], ["debit", "Debit", debit.length], ["investment", "Investment", investment.length]].map(([id, label, n]) => (
         <button key={id} onClick={() => setView(id)} className="px-4 py-1.5 rounded-full text-sm font-medium transition-colors" style={view === id ? { backgroundColor: BRAND.blue, color: "#fff" } : { color: "#78716c" }}>
           {label} <span className="opacity-70">({n})</span>
         </button>
@@ -1383,47 +1720,183 @@ function AccountsDetail({ accounts, setAccounts, transactions, setTab, focusAcco
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         {Tabs}
-        <Btn variant="outline" onClick={() => setTab("accounts")}><CreditCard size={15} /> Manage Accounts</Btn>
+        {view !== "investment" && <Btn variant="outline" onClick={() => setTab("accounts")}><CreditCard size={15} /> Manage Accounts</Btn>}
       </div>
-      {!list.length && <Empty icon={Landmark} title={`No ${view} accounts`} body={`Use "Manage Accounts" above to add your first ${view} account.`} action={<Btn onClick={() => setTab("accounts")}><Plus size={15} /> Manage Accounts</Btn>} />}
-      <div className="grid md:grid-cols-2 gap-4">
+
+      {view === "debit" && debit.length > 0 && (
+        <Card className="p-4 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-xs text-stone-400 mb-0.5">Total savings (IDR equivalent)</div>
+            <Num className="text-xl font-bold" style={{ color: BRAND.blue }}>{idr(totalDebitIdr)}</Num>
+          </div>
+          {fxUpdatedAt && <div className="text-[11px] text-stone-400 text-right">Rates updated<br />{fxUpdatedAt}</div>}
+        </Card>
+      )}
+
+      {view === "investment" && (
+        <Card className="p-4 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-xs text-stone-400 mb-0.5">Total portfolio value (IDR)</div>
+            <Num className="text-xl font-bold" style={{ color: BRAND.gold }}>{idr(totalInvestmentIdr)}</Num>
+          </div>
+          <Btn onClick={addInvestment}><Plus size={15} /> Add investment</Btn>
+        </Card>
+      )}
+
+      {view === "investment" && !investment.length && <Empty icon={TrendingUp} title="No investments yet" body="Track your bonds, mutual funds, gold, stocks, and crypto here." action={<Btn onClick={addInvestment}><Plus size={15} /> Add investment</Btn>} />}
+
+      {view === "investment" && investment.length > 0 && (
+        <div className="grid md:grid-cols-2 gap-4">
+          {investment.map((a) => {
+            const f = INVEST_FIELDS[a.holder] || INVEST_FIELDS["Mutual Funds"];
+            const qty = Number(a.creditLimit) || 0;
+            const unitPrice = Number(a.balanceOwed) || 0;
+            const avgBuy = Number(a.points) || 0;
+            const currentVal = qty * unitPrice;
+            const costBasis = qty * avgBuy;
+            const pnl = currentVal - costBasis;
+            const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+            const annualCoupon = f.isBond ? qty * unitPrice * (avgBuy / 100) : 0;
+            const accentColor = INVEST_COLORS[a.holder] || BRAND.blue;
+            return (
+              <Card key={a.id} className="p-0 overflow-hidden">
+                <div className="px-4 py-3 flex items-center justify-between" style={{ background: accentColor, color: "#fff" }}>
+                  <div className="flex items-center gap-2"><TrendingUp size={18} /><span className="font-semibold truncate">{a.name || "New Investment"}</span></div>
+                  <div className="flex items-center gap-1.5">
+                    {(a.currency && a.currency !== "IDR") && <span className="text-xs bg-white/20 rounded px-1.5 py-0.5">{a.currency}</span>}
+                    <span className="text-xs bg-white/20 rounded px-1.5 py-0.5">{a.holder || "Investment"}</span>
+                  </div>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Instrument name"><input value={a.name || ""} onChange={(e) => update(a.id, { name: e.target.value })} placeholder="e.g. SBR013" className={inputCls} /></Field>
+                    <Field label="Type"><select value={a.holder || "Mutual Funds"} onChange={(e) => update(a.id, { holder: e.target.value })} className={inputCls}>{INVEST_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></Field>
+                    <Field label="Currency"><select value={a.currency || "IDR"} onChange={(e) => update(a.id, { currency: e.target.value })} className={inputCls}>{CURRENCY_LIST.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+                    <Field label="Platform / broker"><input value={a.bank || ""} onChange={(e) => update(a.id, { bank: e.target.value })} placeholder="e.g. Bibit" className={inputCls} /></Field>
+                    <Field label={f.qtyLabel}><DecimalInput value={a.creditLimit ?? 0} onCommit={(q) => update(a.id, { creditLimit: q, balance: q * (Number(a.balanceOwed) || 0) })} className={inputCls + " num"} /></Field>
+                    <Field label={`${f.priceLabel.replace(" (IDR)", "")} (${a.currency || "IDR"})`}><input value={a.balanceOwed ?? 0} onChange={(e) => { const p = intField(e.target.value); update(a.id, { balanceOwed: p, balance: (Number(a.creditLimit) || 0) * p }); }} className={inputCls + " num"} inputMode="numeric" /></Field>
+                    <Field label={f.isBond ? f.extraLabel : `${f.extraLabel.replace(" (IDR)", "")} (${a.currency || "IDR"})`}><DecimalInput value={a.points ?? 0} onCommit={(n) => update(a.id, { points: n })} className={inputCls + " num"} /></Field>
+                    {f.isBond && <div className="col-span-2"><Field label="Maturity date"><input type="date" value={a.number || ""} onChange={(e) => update(a.id, { number: e.target.value })} className={inputCls} /></Field></div>}
+                  </div>
+
+                  <div className="border-t border-stone-100 pt-3 space-y-2">
+                    {(() => {
+                      const cur = a.currency || "IDR";
+                      const idrVal = toIdr(currentVal, cur);
+                      const idrCost = toIdr(costBasis, cur);
+                      const idrPnl = idrVal != null && idrCost != null ? idrVal - idrCost : null;
+                      return (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-stone-400">Current value</span>
+                            <div className="text-right">
+                              <Num className="font-semibold text-sm" style={{ color: accentColor }}>{fmtMoney(currentVal, cur)}</Num>
+                              {cur !== "IDR" && idrVal != null && <div className="text-[11px] text-stone-400">≈ {idr(idrVal)}</div>}
+                            </div>
+                          </div>
+                          {f.isBond ? (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-stone-400">Annual coupon income</span>
+                                <Num className="text-sm font-medium" style={{ color: BRAND.success }}>{fmtMoney(annualCoupon, cur)}</Num>
+                              </div>
+                              {a.number && (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs text-stone-400">Matures</span>
+                                  <span className="text-xs font-medium text-stone-700">{new Date(a.number).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}</span>
+                                </div>
+                              )}
+                            </>
+                          ) : costBasis > 0 ? (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-stone-400">Cost basis</span>
+                                <Num className="text-xs text-stone-500">{fmtMoney(costBasis, cur)}</Num>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-stone-400">P&amp;L</span>
+                                <div className="text-right">
+                                  <span className="text-sm font-semibold" style={{ color: pnl >= 0 ? BRAND.success : BRAND.red }}>
+                                    {pnl >= 0 ? "+" : ""}{fmtMoney(pnl, cur)} <span className="text-xs font-normal">({pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(2)}%)</span>
+                                  </span>
+                                  {cur !== "IDR" && idrPnl != null && <div className="text-[11px]" style={{ color: idrPnl >= 0 ? BRAND.success : BRAND.red }}>≈ {idrPnl >= 0 ? "+" : ""}{idr(idrPnl)}</div>}
+                                </div>
+                              </div>
+                            </>
+                          ) : null}
+                        </>
+                      );
+                    })()}
+                    <div className="flex justify-end pt-1">
+                      <Btn variant="danger" onClick={() => confirmDelete(a.id, a.name || "this investment")}><Trash2 size={14} /></Btn>
+                    </div>
+                  </div>
+                  {renderBalanceHistory(a.id)}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {deleteConfirm && (
+        <ConfirmDialog
+          title={`Delete "${deleteConfirm.name}"?`}
+          body="This will permanently remove the account and cannot be undone."
+          confirmLabel="Delete account"
+          onConfirm={doDelete}
+          onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
+      {view !== "investment" && !list.length && <Empty icon={Landmark} title={`No ${view} accounts`} body={`Use "Manage Accounts" above to add your first ${view} account.`} action={<Btn onClick={() => setTab("accounts")}><Plus size={15} /> Manage Accounts</Btn>} />}
+      {view !== "investment" && <div className="grid md:grid-cols-2 gap-4">
         {list.map((a) => {
           const txs = balanceOf(a.id);
-          const focused = a.id === focusAccount;
+          const currency = a.currency || "IDR";
+          const idrEquiv = currency !== "IDR" ? toIdr(a.balance || 0, currency) : null;
           return (
             <Card key={a.id} className="p-0 overflow-hidden" >
               <div className="px-4 py-3 flex items-center justify-between" style={{ background: a.color, color: "#fff" }}>
                 <div className="flex items-center gap-2"><CreditCard size={18} /><span className="font-semibold truncate">{a.name}</span></div>
-                <span className="text-xs uppercase tracking-wide opacity-80">{a.type}</span>
+                <div className="flex items-center gap-2">
+                  {currency !== "IDR" && <span className="text-xs font-medium bg-white/20 rounded px-1.5 py-0.5">{currency}</span>}
+                  <span className="text-xs uppercase tracking-wide opacity-80">{a.type}</span>
+                </div>
               </div>
               <div className="p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Bank name"><input value={a.bank || ""} onChange={(e) => update(a.id, { bank: e.target.value })} placeholder="UOB" className={inputCls} /></Field>
                   <Field label="Account holder"><input value={a.holder || ""} onChange={(e) => update(a.id, { holder: e.target.value })} placeholder="Full name" className={inputCls} /></Field>
                   <Field label="Account number"><input value={a.number || ""} onChange={(e) => update(a.id, { number: e.target.value.replace(/[^\d]/g, "") })} inputMode="numeric" placeholder="1234567890" className={inputCls + " num"} /></Field>
-                  <Field label="Currency"><select value={a.currency || "IDR"} onChange={(e) => update(a.id, { currency: e.target.value })} className={inputCls}>{CURRENCY_LIST.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+                  <Field label="Currency"><select value={currency} onChange={(e) => update(a.id, { currency: e.target.value })} className={inputCls}>{CURRENCY_LIST.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
                 </div>
                 {view === "debit" ? (
-                  <Field label="Total savings (balance)"><input value={a.balance ?? 0} onChange={(e) => update(a.id, { balance: intField(e.target.value) })} className={inputCls + " num"} /></Field>
+                  <Field label={`Balance (${currency})`}><input value={a.balance ?? 0} onChange={(e) => update(a.id, { balance: intField(e.target.value) })} className={inputCls + " num"} /></Field>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Credit limit"><input value={a.creditLimit ?? 0} onChange={(e) => update(a.id, { creditLimit: intField(e.target.value) })} className={inputCls + " num"} /></Field>
                     <Field label="Current balance owed"><input value={a.balanceOwed ?? 0} onChange={(e) => update(a.id, { balanceOwed: intField(e.target.value) })} className={inputCls + " num"} /></Field>
                     <Field label="Card points"><input value={a.points ?? 0} onChange={(e) => update(a.id, { points: intField(e.target.value) })} className={inputCls + " num"} /></Field>
-                    <div className="flex items-end"><div className="text-xs text-stone-400">Available: <Num className="font-medium text-stone-700">{fmtMoney((a.creditLimit || 0) - (a.balanceOwed || 0), a.currency || "IDR")}</Num></div></div>
+                    <div className="flex items-end"><div className="text-xs text-stone-400">Available: <Num className="font-medium text-stone-700">{fmtMoney((a.creditLimit || 0) - (a.balanceOwed || 0), currency)}</Num></div></div>
                   </div>
                 )}
                 <div className="flex items-center justify-between pt-1 border-t border-stone-100">
                   <span className="text-xs text-stone-400">{txs.length} transactions</span>
-                  {view === "debit"
-                    ? <span className="text-sm">Savings: <Num className="font-semibold" style={{ color: BRAND.blue }}>{fmtMoney(a.balance || 0, a.currency || "IDR")}</Num></span>
-                    : <span className="text-sm">Points: <Num className="font-semibold" style={{ color: BRAND.gold }}>{(a.points || 0).toLocaleString("id-ID")}</Num></span>}
+                  {view === "debit" ? (
+                    <div className="text-right">
+                      <div className="text-sm">Savings: <Num className="font-semibold" style={{ color: BRAND.blue }}>{fmtMoney(a.balance || 0, currency)}</Num></div>
+                      {idrEquiv != null && <div className="text-xs text-stone-400">≈ <Num>{idr(idrEquiv)}</Num></div>}
+                    </div>
+                  ) : (
+                    <span className="text-sm">Points: <Num className="font-semibold" style={{ color: BRAND.gold }}>{(a.points || 0).toLocaleString("id-ID")}</Num></span>
+                  )}
                 </div>
+                {view === "debit" && renderBalanceHistory(a.id)}
               </div>
             </Card>
           );
         })}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -1451,9 +1924,53 @@ function Goals({ goals, setGoals, transactions, month }) {
       <div className="md:col-span-2 space-y-3">
         {!goals.length && <Empty icon={Target} title="No goals yet" body="Cap a category, cap the whole month, or set a savings target." />}
         {goals.map((g) => {
-          if (g.kind === "save") { const saved = Math.max(0, income - spent); const pct = g.target ? (saved / g.target) * 100 : 0; const met = saved >= g.target; return <Card key={g.id} className="p-4"><div className="flex items-center justify-between mb-2"><div><div className="font-medium text-stone-900 flex items-center gap-1.5"><PiggyBank size={15} style={{ color: BRAND.blue }} /> {g.name} {met && <span className="text-xs fp-text-success">· reached</span>}</div><div className="text-xs text-stone-400">Savings target · {monthLabel(month)}</div></div><Btn variant="danger" onClick={() => del(g.id)}><Trash2 size={15} /></Btn></div><div className="h-2.5 rounded-full bg-stone-100 overflow-hidden mb-1.5"><div className="h-full rounded-full" style={{ width: Math.min(100, pct) + "%", background: met ? BRAND.success : BRAND.blue }} /></div><div className="flex justify-between text-sm"><Num className="text-stone-600">{idr(saved)} of {idr(g.target)}</Num><Num className="font-medium fp-text-success">{met ? "target met" : idr(g.target - saved) + " to go"}</Num></div></Card>; }
-          const s = expenses.filter((t) => (g.category === "__total__" ? true : t.category === g.category)).reduce((a, t) => a + netOf(t), 0); const pct = g.limit ? (s / g.limit) * 100 : 0; const over = s > g.limit; const left = g.limit - s;
-          return <Card key={g.id} className="p-4"><div className="flex items-center justify-between mb-2"><div><div className="font-medium text-stone-900 flex items-center gap-2">{g.name} {over && <span className="inline-flex items-center gap-1 text-xs" style={{ color: BRAND.red }}><AlertTriangle size={13} /> over budget</span>}</div><div className="text-xs text-stone-400">{g.category === "__total__" ? "All spending" : g.category} · {monthLabel(month)}</div></div><Btn variant="danger" onClick={() => del(g.id)}><Trash2 size={15} /></Btn></div><div className="h-2.5 rounded-full bg-stone-100 overflow-hidden mb-1.5"><div className="h-full rounded-full" style={{ width: Math.min(100, pct) + "%", background: over ? BRAND.red : pct > 80 ? BRAND.gold : BRAND.blue }} /></div><div className="flex justify-between text-sm"><Num className="text-stone-600">{idr(s)} of {idr(g.limit)}</Num><Num className="font-medium" style={{ color: over ? BRAND.red : BRAND.success }}>{over ? idr(-left) + " over" : idr(left) + " left"}</Num></div></Card>;
+          if (g.kind === "save") {
+            const saved = Math.max(0, income - spent); const pct = g.target ? (saved / g.target) * 100 : 0; const met = saved >= g.target;
+            const ringColor = met ? BRAND.success : BRAND.blue;
+            return (
+              <Card key={g.id} className="p-4">
+                <div className="flex items-start gap-4">
+                  <CircleRing pct={pct} color={ringColor} size={72} stroke={6}>{Math.round(Math.min(pct, 100))}%</CircleRing>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-semibold text-stone-900 flex items-center gap-1.5"><PiggyBank size={14} style={{ color: ringColor }} /> {g.name}</div>
+                        <div className="text-xs text-stone-400 mt-0.5">Savings target · {monthLabel(month)}</div>
+                      </div>
+                      <Btn variant="danger" onClick={() => del(g.id)}><Trash2 size={14} /></Btn>
+                    </div>
+                    <div className="mt-3 border-t border-stone-100 pt-3 flex justify-between text-sm">
+                      <Num className="text-stone-500">{idr(saved)} of {idr(g.target)}</Num>
+                      <Num className="font-medium" style={{ color: met ? BRAND.success : "#57534e" }}>{met ? "✓ reached" : idr(g.target - saved) + " to go"}</Num>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            );
+          }
+          const s = expenses.filter((t) => (g.category === "__total__" ? true : t.category === g.category)).reduce((a, t) => a + netOf(t), 0);
+          const pct = g.limit ? (s / g.limit) * 100 : 0; const over = s > g.limit; const left = g.limit - s;
+          const ringColor = over ? BRAND.red : pct > 80 ? BRAND.gold : BRAND.blue;
+          return (
+            <Card key={g.id} className="p-4">
+              <div className="flex items-start gap-4">
+                <CircleRing pct={pct} color={ringColor} size={72} stroke={6}>{Math.round(Math.min(pct, 100))}%</CircleRing>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-semibold text-stone-900 flex items-center gap-2">{g.name} {over && <span className="inline-flex items-center gap-1 text-xs" style={{ color: BRAND.red }}><AlertTriangle size={12} /> over</span>}</div>
+                      <div className="text-xs text-stone-400 mt-0.5">{g.category === "__total__" ? "All spending" : g.category} · {monthLabel(month)}</div>
+                    </div>
+                    <Btn variant="danger" onClick={() => del(g.id)}><Trash2 size={14} /></Btn>
+                  </div>
+                  <div className="mt-3 border-t border-stone-100 pt-3 flex justify-between text-sm">
+                    <Num className="text-stone-500">{idr(s)} of {idr(g.limit)}</Num>
+                    <Num className="font-medium" style={{ color: over ? BRAND.red : BRAND.success }}>{over ? idr(-left) + " over" : idr(left) + " left"}</Num>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          );
         })}
       </div>
     </div>
@@ -2110,7 +2627,7 @@ function LoginPage() {
     if (error) notify("error", error.message);
   };
   return (
-    <div style={{ fontFamily: "'Inter',ui-sans-serif,system-ui,sans-serif", background: "#FAF7F1", color: BRAND.ink, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ fontFamily: "'Inter',ui-sans-serif,system-ui,sans-serif", background: "#F4F6FB", color: BRAND.ink, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <FontStyle />
       <AuthToast toast={toast} onClose={() => setToast(null)} />
       <div className="w-full max-w-sm mx-auto px-4">
@@ -2149,7 +2666,7 @@ function AuthWrapper() {
     return () => subscription.unsubscribe();
   }, []);
   if (checking) return (
-    <div style={{ fontFamily: "'Inter',ui-sans-serif,system-ui,sans-serif", background: "#FAF7F1", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ fontFamily: "'Inter',ui-sans-serif,system-ui,sans-serif", background: "#F4F6FB", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <FontStyle /><Loader2 className="animate-spin" style={{ color: BRAND.blue }} />
     </div>
   );
@@ -2159,7 +2676,7 @@ function AuthWrapper() {
 
 export default AuthWrapper;
 
-const rootStyle = { fontFamily: "'Inter',ui-sans-serif,system-ui,sans-serif", background: "#FAF7F1", color: BRAND.ink, minHeight: "100vh" };
+const rootStyle = { fontFamily: "'Inter',ui-sans-serif,system-ui,sans-serif", background: "#F4F6FB", color: BRAND.ink, minHeight: "100vh" };
 function FontStyle() {
   return <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
