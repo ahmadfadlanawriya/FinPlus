@@ -7,7 +7,7 @@ import {
 import {
   Wallet, LayoutDashboard, ListOrdered, Upload, CreditCard, Target,
   Plus, Trash2, Sparkles, AlertTriangle, Check, Loader2, X, Search,
-  FileText, Banknote, ChevronDown, RefreshCw, PiggyBank, Plane, Ban, RotateCcw, Users, Menu, MessageCircle, Landmark, Image as ImageIcon, ChevronRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, LogOut, UserCircle, HandCoins, LayoutList, TableIcon, TrendingUp,
+  FileText, Banknote, ChevronDown, RefreshCw, PiggyBank, Plane, Ban, RotateCcw, Users, Menu, MessageCircle, Landmark, Image as ImageIcon, ChevronRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, LogOut, UserCircle, HandCoins, LayoutList, TableIcon, TrendingUp, CalendarRange,
 } from "lucide-react";
 
 /* ----------------------------- brand palette ----------------------------- */
@@ -48,7 +48,7 @@ const PALETTE = [BRAND.blue, BRAND.red, BRAND.gold, BRAND.plum, BRAND.slate, BRA
 const ACCOUNT_COLORS = [BRAND.blue, BRAND.red, BRAND.gold, BRAND.plum, BRAND.slate, BRAND.olive, "#A65D5D"];
 const RELATIONS = ["Family", "Friends", "Work Colleagues"];
 const RELATION_COLOR = { Family: BRAND.slate, Friends: BRAND.gold, "Work Colleagues": BRAND.red };
-const MAX_PARTIES = 20;
+const MAX_PARTIES = 50;
 const TRIP_GAP_DAYS = 5;
 
 const ID_MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MEI: 5, MAY: 5, JUN: 6, JUL: 7, AGU: 8, AGS: 8, AUG: 8, SEP: 9, OKT: 10, OCT: 10, NOV: 11, DES: 12, DEC: 12 };
@@ -59,8 +59,9 @@ const SAAS = [
   "wati.io", "wati", "bolt", "stackblitz", "supabase", "planetscale", "sentry", "hubspot", "intercom",
   "airtable", "zapier", "adobe", "microsoft 365", "office 365", "canva", "loom", "postman", "retool",
   "clerk", "auth0", "algolia", "snowflake", "openrouter", "huggingface", "replicate", "fly.io", "railway", "spotify", "netflix", "youtube premium",
+  "facebk", "facebook", "meta ads", "make.com", "whatsform", "typeform", "glide", "docsautomator", "jungleworks",
 ];
-const FEE_KW = ["membership fee", "e-statement fee", "statement fee", "biaya notifikasi", "annual fee", "iuran", "admin fee", "biaya adm", "pajak bunga", "administration fee", "handling charges", "bea meterai"];
+const FEE_KW = ["membership fee", "e-statement fee", "statement fee", "biaya notifikasi", "annual fee", "iuran", "admin fee", "biaya adm", "pajak bunga", "administration fee", "handling charges", "bea meterai", "biaya materai", "stamp duty", "notification charge", "e-billing"];
 const CURRENCY = {
   MYR: { c: "Malaysia", flag: "\u{1F1F2}\u{1F1FE}" }, HKD: { c: "Hong Kong", flag: "\u{1F1ED}\u{1F1F0}" },
   SGD: { c: "Singapore", flag: "\u{1F1F8}\u{1F1EC}" }, USD: { c: "United States", flag: "\u{1F1FA}\u{1F1F8}" },
@@ -130,6 +131,12 @@ function parseIndoDate(s) {
     const day = mFull[1].padStart(2, "0"); const mo = ID_MONTHS[mFull[2].toUpperCase().slice(0, 3)]; const y = mFull[3];
     if (mo) return `${y}-${String(mo).padStart(2, "0")}-${day}`;
   }
+  // "16-MEI" or "01-JUN" — BCA credit card style (DD-Mon with hyphen, no year)
+  const mHyphen = s.match(/^(\d{1,2})-([A-Za-z]{3,4})$/);
+  if (mHyphen) { const day = mHyphen[1].padStart(2, "0"); const mo = ID_MONTHS[mHyphen[2].toUpperCase().slice(0, 3)]; if (mo) { const y = new Date().getFullYear(); let iso = `${y}-${String(mo).padStart(2, "0")}-${day}`; if (new Date(iso) > new Date(Date.now() + 86400000)) iso = `${y - 1}-${String(mo).padStart(2, "0")}-${day}`; return iso; } }
+  // "14-May-26" — Mandiri style (DD-Mon-YY with English abbrev and hyphens)
+  const mDash = s.match(/^(\d{1,2})-([A-Za-z]{3,4})-(\d{2,4})$/);
+  if (mDash) { const day = mDash[1].padStart(2, "0"); const mo = ID_MONTHS[mDash[2].toUpperCase().slice(0, 3)]; let y = mDash[3]; if (y.length === 2) y = "20" + y; if (mo) return `${y}-${String(mo).padStart(2, "0")}-${day}`; }
   // "13 MEI" or "13MEI" — UOB style (no year, infer from current year)
   const m = s.match(/(\d{1,2})\s*([A-Za-z]{3,4})/);
   if (m) {
@@ -150,7 +157,7 @@ function nextMonth(iso) { const d = new Date(iso); d.setMonth(d.getMonth() + 1);
 
 /* ----------------------------- transaction classifier ----------------------------- */
 // AI kind labels are unreliable; re-derive deterministically from the description + CR flag.
-const PAYMENT_KW = ["paymt", "pembayaran", "thru e-bank", "homeb", "cyberb", "payment thru", "pelunasan", "kartu kredit", "payment-thank"];
+const PAYMENT_KW = ["paymt", "pembayaran", "thru e-bank", "homeb", "cyberb", "payment thru", "pelunasan", "kartu kredit", "payment-thank", "payment thank"];
 const TRANSFER_KW = ["overbooking", "trf to", "trf fr", "transfer to", "atm transfer", "tr to savings"];
 function classifyDirection(desc, aiKind, hasCR, accountType) {
   const d = (desc || "").toLowerCase();
@@ -190,6 +197,7 @@ function fmtMoney(amount, currency) {
   catch { return idr(amount); }
 }
 function relDate(iso) { const d = new Date(iso); const days = Math.floor((Date.now() - d) / 86400000); if (days === 0) return "today"; if (days === 1) return "yesterday"; if (days < 7) return `${days} days ago`; return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }); }
+function fmtDateShort(iso) { return new Date(iso + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" }); }
 function resolveDebitTarget(accounts, accountId) {
   const acc = accounts.find((a) => a.id === accountId); if (!acc) return null;
   if (acc.type === "debit") return acc.id;
@@ -348,6 +356,21 @@ async function extractFromFile(file) {
     "  FLAZZ BCA TOPUP: kind 'transfer', hasCR false. desc 'Flazz BCA Top-up'.\\n" +
     "  BUNGA: kind 'refund', hasCR true. desc 'Bank Interest'.\\n" +
     "  PAJAK BUNGA: kind 'purchase', hasCR false. desc 'Interest Tax'.\\n" +
+    "BCA credit card statements (VISA SQ Signature, JCB Black, Krisflyer — titled 'REKENING KARTU KREDIT'):\\n" +
+    "- Columns: TANGGAL TRANSAKSI | TANGGAL PEMBUKUAN | KETERANGAN | JUMLAH (RP). Dates are DD-MEI / DD-JUN (DD followed by hyphen and Indonesian month abbrev, e.g. '16-MEI', '01-JUN').\\n" +
+    "- FX transactions span TWO lines: first line has description and IDR amount (with period as thousands separator, e.g. '21.512' = 21512); second line is a parenthetical using Indonesian number format (comma as decimal, period as thousands): '(HKD 9,40 X 2.288,51)'. Use the IDR integer from the first line as 'amount'; normalise the foreign amount to standard notation for 'fx' (e.g. 'HKD 9.40').\\n" +
+    "- One PDF may contain multiple card sections (e.g. VISA SQ SIGNATURE, BCA JCB BLACK). Extract transactions from ALL sections.\\n" +
+    "- 'PEMBAYARAN - MYBCA': kind 'payment', hasCR true.\\n" +
+    "- 'SALDO SEBELUMNYA': skip (previous balance).\\n" +
+    "- 'SUBTOTAL TRANSAKSI', 'SUBTOTAL', 'TOTAL': skip.\\n" +
+    "Bank Mandiri credit card statements (Mandiri Kartu Kredit, VISA/Mastercard):\\n" +
+    "- Columns: Tanggal Transaksi | Tanggal Pembukuan | Keterangan | Jumlah Amount (IDR). Dates are DD-Mon-YY (e.g. '14-May-26', '15-Jun-26').\\n" +
+    "- FX transactions span TWO lines: first line has the description and IDR amount; second line is a parenthetical (e.g. '(HKD 636.00 x 2,246.36)'). Use the IDR amount from the first line as 'amount'; put the foreign currency info (e.g. 'HKD 636.00') in 'fx'.\\n" +
+    "- 'PAYMENT THANK YOU - Livin': kind 'payment', hasCR true.\\n" +
+    "- 'POWER CASH LIVIN BY MAN xxx/xxx': kind 'purchase' (cash advance installment), hasCR false; desc 'Mandiri Power Cash'.\\n" +
+    "- 'BUNGA CICILAN': skip (always 0.00).\\n" +
+    "- 'TRX NOTIFICATION CHARGE', 'E-BILLING STATEMENT CHRGE', 'STAMP DUTY/BIAYA MATERAI': kind 'purchase' (fees).\\n" +
+    "- 'Tagihan Bulan Lalu': skip (previous month balance).\\n" +
     "CIMB Niaga credit card statements (MC WORLD PC, VISA Infinite, JCB Ultimate):\\n" +
     "- Columns: Tgl. Transaksi | Tgl. Pembukuan | Keterangan | Jumlah. Dates are DD/MM (e.g. '07/05').\\n" +
     "- FX format: 'WATI.IO... BILLED AS USD 50.00(1 USD = 17629.83 IDR 881,491.63' \u2014 'amount' is the LAST number on the line (the IDR billed amount, e.g. 881491.63); put the foreign currency info (e.g. 'USD 50.00') in 'fx'.\\n" +
@@ -360,11 +383,27 @@ async function extractFromFile(file) {
     "- 'refund': incoming credits, reversals, cashbacks, interest, remittances (CR rows that are NOT payments, REMITTANCE CR, CREDIT INTEREST, OVERBOOKING FROM, DIRECT CREDIT, BUNGA, CASHBACK).\\n" +
     "- 'transfer': CASA outgoing inter-account moves \u2014 OVERBOOKING TRF TO, TR TO SAVINGS, ATM transfer out, SWITCHING CR, FLAZZ BCA TOPUP. These are NOT expenses.\\n" +
     "- 'purchase': everything else (direct purchases, fees, WITHHOLDING TAX, QR purchases, installments).\\n" +
-    "SKIP: opening/closing balance rows (LAST BALANCE, Saldo Awal, Saldo Akhir, PREVIOUS BALANCE, OUTSTANDING BALANCE, ENDING BALANCE), totals (SUBTOTAL, Total Kredit, Total Debit, SUB TOTAL, TOTAL TAGIHAN, RINGKASAN TAGIHAN, TOTAL OVERSEAS TRANSACTION), bonus/point summaries, column headers, card/account-number-only rows, page-number stamps (e.g. lone 9-digit numbers like 570618619), END OF STATEMENT, any row whose amount is 0.\\n" +
+    "SKIP: opening/closing balance rows (LAST BALANCE, SALDO SEBELUMNYA, Tagihan Bulan Lalu, Saldo Awal, Saldo Akhir, PREVIOUS BALANCE, OUTSTANDING BALANCE, ENDING BALANCE), totals (SUB-TOTAL, SUBTOTAL, SUBTOTAL TRANSAKSI, Total Kredit, Total Debit, SUB TOTAL, TOTAL TAGIHAN, RINGKASAN TAGIHAN, TOTAL OVERSEAS TRANSACTION, TOTAL), bonus/point/miles summaries, column headers, card/account-number-only rows, page-number stamps (e.g. lone 9-digit numbers like 570618619), END OF STATEMENT, any row whose amount is 0.\\n" +
     "Return [] if you find none.";
   const block = isPdf ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } } : { type: "image", source: { type: "base64", media_type: media, data: b64 } };
   const text = await anthropic([block, { type: "text", text: prompt }], 8000);
   const arr = parseJSON(text); return Array.isArray(arr) ? arr : [];
+}
+async function extractFromReceipt(file) {
+  const b64 = await fileToBase64(file);
+  const isPdf = file.type === "application/pdf";
+  const media = file.type || "image/jpeg";
+  const prompt = "Extract transaction details from this receipt. Return ONLY JSON (no prose, no markdown): {\"date\":\"YYYY-MM-DD or empty string if not visible\",\"desc\":\"merchant or vendor name\",\"amount\":number,\"fx\":\"e.g. SGD 24.70 or empty string\"}. amount is the total paid in IDR as a plain integer (no separators). If the receipt is in a foreign currency and the IDR equivalent is not shown, set amount to 0 and put the foreign total in fx. Return {} if this is not a receipt.";
+  const block = isPdf ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } } : { type: "image", source: { type: "base64", media_type: media, data: b64 } };
+  const text = await anthropic([block, { type: "text", text: prompt }], 1024);
+  const obj = parseJSON(text);
+  return (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
+}
+function flagDuplicates(enriched, existingTx) {
+  return enriched.map((d) => {
+    const match = existingTx.find((t) => t.date === d.date && Math.abs(t.amount - d.amount) < 1);
+    return match ? { ...d, _include: false, _potentialDuplicate: { id: match.id, desc: match.desc, date: match.date, amount: match.amount } } : d;
+  });
 }
 async function aiCategorize(descriptions) {
   if (!descriptions.length) return [];
@@ -460,12 +499,17 @@ function App({ user }) {
   const [importHistory, setImportHistory] = useState([]);
   const [drafts, setDrafts] = useState([]);
   const [month, setMonth] = useState(monthKey(new Date().toISOString()));
+  const [dateRange, setDateRange] = useState(null); // null = use month mode; { from, to } = custom range (YYYY-MM-DD)
   const [periodMode, setPeriodMode] = useState("month");
   const [focusAccount, setFocusAccount] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const [syncError, setSyncError] = useState("");
   const [fxRates, setFxRates] = useState({}); // IDR per 1 unit of each foreign currency
   const [fxUpdatedAt, setFxUpdatedAt] = useState(null);
+  const [quickAdd, setQuickAdd] = useState(false);
+  const [quickMode, setQuickMode] = useState("manual");
+  const [quickForm, setQuickForm] = useState({ date: today(), desc: "", amount: "", direction: "expense", category: "", scope: "", accountId: "", fx: "" });
+  const [quickBusy, setQuickBusy] = useState(false);
 
   useEffect(() => {
     fetch("https://open.er-api.com/v6/latest/IDR")
@@ -615,6 +659,116 @@ function App({ user }) {
     </>
   );
 
+  const renderQuickAddModal = () => {
+    if (!quickAdd) return null;
+    const qSet = (patch) => setQuickForm((f) => ({ ...f, ...patch }));
+    const qClose = () => { setQuickAdd(false); setQuickMode("manual"); setQuickBusy(false); };
+    const qSave = () => {
+      const t = {
+        id: uid(), date: quickForm.date || today(), desc: quickForm.desc.trim() || "Unknown",
+        amount: Math.abs(parseFloat(quickForm.amount) || 0), direction: quickForm.direction,
+        category: quickForm.category || enrich(quickForm.desc)?.category || (quickForm.direction === "payment" ? "Card Payment" : quickForm.direction === "transfer" ? "Transfers" : quickForm.direction === "income" ? "Income" : "Other"),
+        scope: quickForm.scope || defaultScope, accountId: quickForm.accountId || accounts[0]?.id || "",
+        fx: quickForm.fx.trim() || "", payer: "", recurring: false, splits: [], tripCountry: null, notTravel: false,
+      };
+      if (!t.amount) return;
+      learn(t.desc, t.category, t.scope, t.recurring);
+      setAccounts((prev) => applyBalanceDelta(prev, t.accountId, signedAmount(t)));
+      setTransactions((prev) => [...prev, t]);
+      qClose();
+    };
+    const onReceiptFile = async (file) => {
+      if (!file) return;
+      setQuickMode("processing");
+      setQuickBusy(true);
+      try {
+        const r = await extractFromReceipt(file);
+        qSet({ date: r.date || today(), desc: r.desc || "", amount: r.amount ? String(r.amount) : "", fx: r.fx || "" });
+        setQuickMode("review");
+      } catch { setQuickMode("manual"); }
+      finally { setQuickBusy(false); }
+    };
+    const suggestCategory = quickForm.desc ? (recall(quickForm.desc)?.category || enrich(quickForm.desc)?.category || "") : "";
+    const showForm = quickMode === "manual" || quickMode === "review";
+    return (
+      <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" onClick={qClose}>
+        <div className="absolute inset-0 bg-black/40" />
+        <div className="relative bg-white w-full max-w-lg rounded-t-2xl md:rounded-2xl shadow-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-stone-900">Quick add transaction</h3>
+            <button onClick={qClose} className="text-stone-400 hover:text-stone-600"><X size={18} /></button>
+          </div>
+          <div className="flex gap-1 bg-stone-100 rounded-lg p-1">
+            {[["manual", "Manual"], ["camera", "Camera"], ["receipt", "Upload Receipt"]].map(([m, label]) => (
+              <button key={m} onClick={() => setQuickMode(m)} className={"flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors " + (quickMode === m ? "bg-white text-stone-900 shadow-sm" : "text-stone-500")}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {quickMode === "camera" && (
+            <div className="text-center py-6">
+              <input id="qa-camera" type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { onReceiptFile(e.target.files?.[0]); e.target.value = ""; }} />
+              <label htmlFor="qa-camera" className="cursor-pointer inline-flex flex-col items-center gap-3">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ backgroundColor: BRAND.blueTint }}><Upload size={26} style={{ color: BRAND.blue }} /></div>
+                <span className="text-sm font-medium text-stone-800">Open camera</span>
+                <span className="text-xs text-stone-400">Take a photo of your receipt to extract details</span>
+              </label>
+            </div>
+          )}
+          {quickMode === "receipt" && (
+            <div className="text-center py-6">
+              <input id="qa-upload" type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { onReceiptFile(e.target.files?.[0]); e.target.value = ""; }} />
+              <label htmlFor="qa-upload" className="cursor-pointer inline-flex flex-col items-center gap-3">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ backgroundColor: BRAND.blueTint }}><FileText size={26} style={{ color: BRAND.blue }} /></div>
+                <span className="text-sm font-medium text-stone-800">Choose a receipt</span>
+                <span className="text-xs text-stone-400">Photo or PDF from your device</span>
+              </label>
+            </div>
+          )}
+          {quickMode === "processing" && (
+            <div className="text-center py-10 flex flex-col items-center gap-3">
+              <Loader2 size={32} className="animate-spin" style={{ color: BRAND.blue }} />
+              <p className="text-sm text-stone-500">Reading receipt…</p>
+            </div>
+          )}
+          {showForm && (
+            <div className="space-y-3">
+              {quickMode === "review" && <div className="text-xs rounded-lg px-3 py-2 flex items-center gap-1.5" style={{ background: BRAND.blueTint, color: BRAND.blueDark }}><Sparkles size={12} /> Receipt scanned — review and correct the details below.</div>}
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Date"><input type="date" value={quickForm.date} onChange={(e) => qSet({ date: e.target.value })} className={inputCls} /></Field>
+                <Field label="Type">
+                  <select value={quickForm.direction} onChange={(e) => qSet({ direction: e.target.value })} className={inputCls}>
+                    <option value="expense">Expense</option><option value="income">Income</option><option value="payment">Payment</option><option value="transfer">Transfer</option>
+                  </select>
+                </Field>
+              </div>
+              <Field label="Merchant / Description"><input value={quickForm.desc} onChange={(e) => qSet({ desc: e.target.value })} placeholder="e.g. Kopi Kenangan" className={inputCls} /></Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Amount (IDR)"><input value={quickForm.amount} onChange={(e) => qSet({ amount: e.target.value })} placeholder="35000" className={inputCls + " num"} inputMode="decimal" /></Field>
+                <Field label="FX (optional)"><input value={quickForm.fx} onChange={(e) => qSet({ fx: e.target.value })} placeholder="e.g. SGD 24.70" className={inputCls} /></Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Category">
+                  <select value={quickForm.category || suggestCategory} onChange={(e) => qSet({ category: e.target.value })} className={(quickForm.category ? "border border-stone-200" : "border fp-border-warn fp-bg-warn-tint-static") + " w-full rounded-lg px-3 py-2 text-sm bg-white focus:outline-none fp-input"}>
+                    <option value="">— pick —</option>
+                    {(quickForm.direction === "income" ? INCOME_CATEGORIES : CATEGORIES).map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </Field>
+                <Field label="Account">
+                  <select value={quickForm.accountId} onChange={(e) => qSet({ accountId: e.target.value })} className={inputCls}>
+                    {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </Field>
+              </div>
+              <Field label="Profile"><ScopeSelect value={quickForm.scope || defaultScope} onChange={(e) => qSet({ scope: e.target.value })} scopes={scopes} scopeColor={scopeColor} /></Field>
+              <Btn onClick={qSave} disabled={!quickForm.desc.trim() || !quickForm.amount} className="w-full"><Check size={15} /> Save transaction</Btn>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={rootStyle}>
       <FontStyle />
@@ -626,7 +780,7 @@ function App({ user }) {
             <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: BRAND.blue }}><Wallet size={17} className="text-white" /></div>
             <div className="leading-tight"><div className="font-semibold text-stone-900 tracking-tight">FinPlus</div><div className="text-[11px] text-stone-400 -mt-0.5">your money, sorted</div></div>
           </div>
-          <div className="mt-3"><MonthPicker months={months} month={month} setMonth={pickMonth} /></div>
+          <div className="mt-3"><MonthPicker months={months} month={month} setMonth={pickMonth} dateRange={dateRange} setDateRange={setDateRange} /></div>
         </div>
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
           {allSidebarTabs.map(([id, label, Icon], i) => (
@@ -660,7 +814,7 @@ function App({ user }) {
           </div>
           <div className="hidden md:block text-sm font-semibold text-stone-900">{currentLabel}</div>
           <div className="flex items-center gap-2">
-            <MonthPicker months={months} month={month} setMonth={pickMonth} />
+            <MonthPicker months={months} month={month} setMonth={pickMonth} dateRange={dateRange} setDateRange={setDateRange} />
           </div>
         </header>
 
@@ -673,12 +827,12 @@ function App({ user }) {
         <main className="px-4 py-5 pb-24 md:pb-8 max-w-5xl mx-auto">
           {activeMore && <h2 className="text-lg font-semibold text-stone-900 mb-4">{activeMore[1]}</h2>}
           {tab === "overview" && <Overview transactions={transactions} goals={goals} month={month} setTab={setTab} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} periodMode={periodMode} setPeriodMode={setPeriodMode} accounts={accounts} user={user} fxRates={fxRates} balanceHistory={balanceHistory} />}
-          {tab === "transactions" && <Transactions transactions={transactions} setTransactions={setTransactions} accounts={accounts} setAccounts={setAccounts} month={month} learn={learn} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} parties={parties} setTab={setTab} />}
+          {tab === "transactions" && <Transactions transactions={transactions} setTransactions={setTransactions} accounts={accounts} setAccounts={setAccounts} month={month} dateRange={dateRange} learn={learn} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} parties={parties} setTab={setTab} />}
           {tab === "travel" && <Travel transactions={transactions} setTransactions={setTransactions} accounts={accounts} scopes={scopes} scopeColor={scopeColor} tripMeta={tripMeta} setTripMeta={setTripMeta} defaultScope={defaultScope} />}
           {tab === "subscriptions" && <Subscriptions subscriptions={subscriptions} setSubscriptions={setSubscriptions} transactions={transactions} setTransactions={setTransactions} learn={learn} scopes={scopes} scopeColor={scopeColor} setTab={setTab} />}
           {tab === "people" && <People parties={parties} setParties={setParties} transactions={transactions} setTransactions={setTransactions} setTab={setTab} />}
           {tab === "loans" && <LoansPage accounts={accounts} parties={parties} user={user} />}
-          {tab === "import" && <Importer accounts={accounts} setAccounts={setAccounts} setTransactions={setTransactions} setSubscriptions={setSubscriptions} recall={recall} learn={learn} matchSub={matchSub} setTab={setTab} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} drafts={drafts} setDrafts={setDrafts} importHistory={importHistory} onImported={(meta) => setImportHistory((prev) => [{ id: uid(), ...meta, importedAt: new Date().toISOString() }, ...prev])} />}
+          {tab === "import" && <Importer accounts={accounts} setAccounts={setAccounts} transactions={transactions} setTransactions={setTransactions} setSubscriptions={setSubscriptions} recall={recall} learn={learn} matchSub={matchSub} setTab={setTab} scopes={scopes} scopeColor={scopeColor} defaultScope={defaultScope} drafts={drafts} setDrafts={setDrafts} importHistory={importHistory} onImported={(meta) => setImportHistory((prev) => [{ id: uid(), ...meta, importedAt: new Date().toISOString() }, ...prev])} />}
           {tab === "accounts" && <Setup accounts={accounts} setAccounts={setAccounts} transactions={transactions} scopes={scopes} setScopes={setScopes} setTab={setTab} setFocusAccount={setFocusAccount} />}
           {tab === "accountsDetail" && <AccountsDetail accounts={accounts} setAccounts={setAccounts} transactions={transactions} setTab={setTab} focusAccount={focusAccount} setFocusAccount={setFocusAccount} fxRates={fxRates} fxUpdatedAt={fxUpdatedAt} balanceHistory={balanceHistory} />}
           {tab === "goals" && <Goals goals={goals} setGoals={setGoals} transactions={transactions} month={month} />}
@@ -686,6 +840,16 @@ function App({ user }) {
           {tab === "about" && <AboutMe user={user} />}
         </main>
       </div>
+
+      {/* ─── Quick Add FAB ─── */}
+      {accounts.length > 0 && (
+        <button onClick={() => { setQuickForm({ date: today(), desc: "", amount: "", direction: "expense", category: "", scope: defaultScope, accountId: accounts[0]?.id || "", fx: "" }); setQuickMode("manual"); setQuickAdd(true); }}
+          className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-30 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 active:scale-95"
+          style={{ background: BRAND.blue }} title="Quick add transaction">
+          <Plus size={24} color="white" />
+        </button>
+      )}
+      {renderQuickAddModal()}
 
       {/* ─── Bottom nav (mobile only) ─── */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-white/95 backdrop-blur border-t border-stone-100 z-20 flex items-center justify-around px-1">
@@ -708,8 +872,41 @@ function App({ user }) {
   );
 }
 
-function MonthPicker({ months, month, setMonth }) {
-  return <div className="relative"><select value={month} onChange={(e) => setMonth(e.target.value)} className="appearance-none border border-stone-300 rounded-lg pl-3 pr-8 py-1.5 text-sm font-medium bg-white fp-input">{months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select><ChevronDown size={15} className="absolute right-2 top-2.5 text-stone-400 pointer-events-none" /></div>;
+function MonthPicker({ months, month, setMonth, dateRange, setDateRange }) {
+  const [picking, setPicking] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const apply = () => { if (from && to && from <= to) { setDateRange({ from, to }); setPicking(false); } };
+  const clear = () => { setDateRange(null); setFrom(""); setTo(""); };
+  if (picking) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="border border-stone-300 rounded-lg px-2 py-1.5 text-sm bg-white fp-input" />
+        <span className="text-xs text-stone-400">to</span>
+        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="border border-stone-300 rounded-lg px-2 py-1.5 text-sm bg-white fp-input" />
+        <button onClick={apply} disabled={!from || !to || from > to} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-opacity disabled:opacity-40" style={{ backgroundColor: BRAND.blue }}>Apply</button>
+        <button onClick={() => setPicking(false)} className="px-2 py-1.5 rounded-lg text-xs text-stone-500 hover:text-stone-700">Cancel</button>
+      </div>
+    );
+  }
+  if (dateRange) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 border rounded-lg pl-2.5 pr-3 py-1.5 text-sm font-medium bg-white" style={{ borderColor: BRAND.blueLight, color: BRAND.blue }}>
+          <CalendarRange size={14} />
+          <span>{fmtDateShort(dateRange.from)} – {fmtDateShort(dateRange.to)}</span>
+        </div>
+        <button onClick={() => { setPicking(true); setFrom(dateRange.from); setTo(dateRange.to); }} className="p-1.5 rounded-lg border border-stone-200 text-stone-400 hover:text-stone-600 bg-white" title="Edit range"><CalendarRange size={14} /></button>
+        <button onClick={clear} className="p-1.5 rounded-lg border border-stone-200 text-stone-400 hover:text-stone-600 bg-white" title="Clear"><X size={14} /></button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="relative"><select value={month} onChange={(e) => setMonth(e.target.value)} className="appearance-none border border-stone-300 rounded-lg pl-3 pr-8 py-1.5 text-sm font-medium bg-white fp-input">{months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select><ChevronDown size={15} className="absolute right-2 top-2.5 text-stone-400 pointer-events-none" /></div>
+      <button onClick={() => setPicking(true)} className="p-1.5 rounded-lg border border-stone-200 text-stone-400 hover:text-stone-600 hover:border-stone-300 bg-white" title="Custom date range"><CalendarRange size={15} /></button>
+    </div>
+  );
 }
 
 /* ----------------------------- OVERVIEW ----------------------------- */
@@ -786,19 +983,14 @@ function Overview({ transactions, goals, month, setTab, scopes, scopeColor, defa
         </div>
       </div>
 
+      <div className="flex items-center justify-end gap-1">
+        <span className="text-xs text-stone-400">Spend:</span>
+        {[["total", "Total"], ["personal", "Personal"]].map(([v, l]) => (
+          <button key={v} onClick={() => setSpendView(v)} className="px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors" style={spendView === v ? { background: BRAND.blueTint, color: BRAND.blue } : { color: "#a8a29e" }}>{l}</button>
+        ))}
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="p-4 overflow-hidden">
-          <div className="flex items-center justify-between gap-1 mb-1">
-            <div className="text-xs font-medium text-stone-400 uppercase tracking-wide">Your spend</div>
-            <div className="flex gap-0.5">
-              {[["total", "Total"], ["personal", "Personal"]].map(([v, l]) => (
-                <button key={v} onClick={() => setSpendView(v)} className="px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors" style={spendView === v ? { background: BRAND.blueTint, color: BRAND.blue } : { color: "#a8a29e" }}>{l}</button>
-              ))}
-            </div>
-          </div>
-          <div className="block text-lg font-semibold break-all leading-tight" style={{ color: BRAND.red }}>{idr(spendView === "personal" ? personalSpent : spent)}</div>
-          {spendView === "total" && prevSpent ? <div className="text-xs mt-0.5" style={{ color: delta > 0 ? BRAND.red : BRAND.success }}>{delta >= 0 ? "+" : ""}{delta.toFixed(0)}% {periodCompareLabel(periodMode)}</div> : null}
-        </Card>
+        <Stat label="Your spend" value={idr(spendView === "personal" ? personalSpent : spent)} accent={BRAND.red} sub={spendView === "total" && prevSpent ? `${delta >= 0 ? "+" : ""}${delta.toFixed(0)}% ${periodCompareLabel(periodMode)}` : null} subColor={delta > 0 ? BRAND.red : BRAND.success} />
         <Stat label="Credits in" value={idr(income)} accent={BRAND.blue} />
         <Stat label="Card payments" value={idr(payments)} accent={BRAND.slate} />
         <Stat label="Transactions" value={inPeriodTx.length} accent={BRAND.plum} />
@@ -970,11 +1162,11 @@ function SplitEditorRow({ t, parties, onChange, colSpan, setTab }) {
   );
 }
 
-function Transactions({ transactions, setTransactions, accounts, setAccounts, month, learn, scopes, scopeColor, defaultScope, parties, setTab }) {
+function Transactions({ transactions, setTransactions, accounts, setAccounts, month, dateRange, learn, scopes, scopeColor, defaultScope, parties, setTab }) {
   const [q, setQ] = useState(""); const [fCat, setFCat] = useState(""); const [fScope, setFScope] = useState(""); const [fAcct, setFAcct] = useState(""); const [sel, setSel] = useState({}); const [splitOpen, setSplitOpen] = useState(null);
   const acctName = (id) => accounts.find((a) => a.id === id)?.name || "—";
   const acctColor = (id) => accounts.find((a) => a.id === id)?.color || "#78716c";
-  const rows = useMemo(() => transactions.filter((t) => monthKey(t.date) === month).filter((t) => !fCat || t.category === fCat).filter((t) => !fScope || t.scope === fScope).filter((t) => !fAcct || t.accountId === fAcct).filter((t) => !q || t.desc.toLowerCase().includes(q.toLowerCase())).sort((a, b) => b.date.localeCompare(a.date)), [transactions, month, fCat, fScope, fAcct, q]);
+  const rows = useMemo(() => transactions.filter((t) => dateRange ? (t.date >= dateRange.from && t.date <= dateRange.to) : monthKey(t.date) === month).filter((t) => !fCat || t.category === fCat).filter((t) => !fScope || t.scope === fScope).filter((t) => !fAcct || t.accountId === fAcct).filter((t) => !q || t.desc.toLowerCase().includes(q.toLowerCase())).sort((a, b) => b.date.localeCompare(a.date)), [transactions, month, dateRange, fCat, fScope, fAcct, q]);
   const update = (id, patch) => setTransactions((prev) => prev.map((t) => { if (t.id !== id) return t; const next = { ...t, ...patch }; if (patch.category) learn(t.desc, patch.category, next.scope, next.recurring); if (patch.scope) learn(t.desc, next.category, patch.scope, next.recurring); return next; }));
   const updateSplits = (id, splits) => setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, splits } : t)));
   const del = (id) => { const t = transactions.find((x) => x.id === id); if (t) setAccounts((prev) => applyBalanceDelta(prev, t.accountId, -signedAmount(t))); setTransactions((prev) => prev.filter((x) => x.id !== id)); };
@@ -1067,6 +1259,7 @@ function TripCard({ trip, otherTrips, scopes, scopeColor, banner, tripName, onSe
   const [open, setOpen] = useState(true);
   const [adding, setAdding] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [pickSearch, setPickSearch] = useState("");
   const [moveOpenId, setMoveOpenId] = useState(null);
   const [editingName, setEditingName] = useState(false);
   const [nameVal, setNameVal] = useState(tripName || "");
@@ -1128,7 +1321,7 @@ function TripCard({ trip, otherTrips, scopes, scopeColor, banner, tripName, onSe
 
       <div className="flex flex-wrap gap-2 mt-3">
         <Btn variant="outline" onClick={() => { setAdding(!adding); setPicking(false); }} className="text-xs py-1.5"><Plus size={13} /> Add expense</Btn>
-        <Btn variant="ghost" onClick={() => { setPicking(!picking); setAdding(false); }} className="text-xs py-1.5">Assign existing…</Btn>
+        <Btn variant="ghost" onClick={() => { const next = !picking; setPicking(next); setAdding(false); if (!next) setPickSearch(""); }} className="text-xs py-1.5">Assign existing…</Btn>
         <Btn variant="ghost" onClick={() => setOpen(!open)} className="text-xs py-1.5">{open ? "Hide" : "Show"} items</Btn>
       </div>
 
@@ -1145,16 +1338,21 @@ function TripCard({ trip, otherTrips, scopes, scopeColor, banner, tripName, onSe
       {picking && (
         <div className="mt-3 border-t border-stone-100 pt-3">
           <p className="text-xs text-stone-400 mb-2">Pick transactions to move into this trip (tags them Travel, {trip.label}).</p>
-          {candidates.length ? (
-            <div className="max-h-56 overflow-y-auto space-y-1">
-              {candidates.map((t) => (
-                <button key={t.id} onClick={() => onAssignExisting(trip, t)} className="w-full flex items-center justify-between gap-3 text-sm px-2 py-1.5 rounded-lg hover:bg-stone-50 text-left">
-                  <span className="truncate"><span className="text-stone-700">{t.desc}</span> <span className="num text-xs text-stone-400">{t.date}</span></span>
-                  <span className="flex items-center gap-2 shrink-0"><Num className="text-stone-900">{idr(t.amount)}</Num><Plus size={13} className="text-stone-400" /></span>
-                </button>
-              ))}
-            </div>
-          ) : <Muted>No other expenses to assign.</Muted>}
+          <input type="text" autoFocus value={pickSearch} onChange={(e) => setPickSearch(e.target.value)} placeholder="Search transactions…" className={inputCls + " mb-2"} />
+          {(() => {
+            const filtered = pickSearch.trim() ? candidates.filter((t) => t.desc.toLowerCase().includes(pickSearch.toLowerCase()) || (t.category || "").toLowerCase().includes(pickSearch.toLowerCase())) : candidates;
+            if (!filtered.length) return <Muted>{pickSearch.trim() ? `No matches for "${pickSearch}".` : "No other expenses to assign."}</Muted>;
+            return (
+              <div className="max-h-56 overflow-y-auto space-y-1">
+                {filtered.map((t) => (
+                  <button key={t.id} onClick={() => onAssignExisting(trip, t)} className="w-full flex items-center justify-between gap-3 text-sm px-2 py-1.5 rounded-lg hover:bg-stone-50 text-left">
+                    <span className="truncate"><span className="text-stone-700">{t.desc}</span> <span className="num text-xs text-stone-400">{t.date}</span></span>
+                    <span className="flex items-center gap-2 shrink-0"><Num className="text-stone-900">{idr(t.amount)}</Num><Plus size={13} className="text-stone-400" /></span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1360,7 +1558,7 @@ function Subscriptions({ subscriptions, setSubscriptions, transactions, setTrans
 
 /* ----------------------------- PEOPLE ----------------------------- */
 function People({ parties, setParties, transactions, setTransactions, setTab }) {
-  const [f, setF] = useState({ name: "", phone: "", relation: RELATIONS[0] }); const [openId, setOpenId] = useState(null);
+  const [f, setF] = useState({ name: "", phone: "", relation: RELATIONS[0] }); const [openId, setOpenId] = useState(null); const [filterRelation, setFilterRelation] = useState("All");
   const totals = useMemo(() => {
     const map = {}; parties.forEach((p) => (map[p.id] = { owed: 0, paid: 0, items: [] }));
     transactions.forEach((t) => (t.splits || []).forEach((s) => { if (!map[s.partyId]) return; if (s.paid) map[s.partyId].paid += Number(s.amount) || 0; else map[s.partyId].owed += Number(s.amount) || 0; map[s.partyId].items.push({ tx: t, split: s }); }));
@@ -1369,6 +1567,7 @@ function People({ parties, setParties, transactions, setTransactions, setTab }) 
   const totalOwed = Object.values(totals).reduce((a, x) => a + x.owed, 0); const totalCollected = Object.values(totals).reduce((a, x) => a + x.paid, 0);
   const add = () => { if (!f.name || parties.length >= MAX_PARTIES) return; setParties((prev) => [...prev, { id: uid(), name: f.name, phone: f.phone, relation: f.relation }]); setF({ name: "", phone: "", relation: RELATIONS[0] }); };
   const del = (id) => { const t = totals[id]; if (t && (t.owed > 0 || t.paid > 0)) return; setParties((prev) => prev.filter((p) => p.id !== id)); };
+  const updateParty = (id, patch) => setParties((prev) => prev.map((p) => p.id === id ? { ...p, ...patch } : p));
   const setSplitPaid = (txId, splitId, paid) => setTransactions((prev) => prev.map((t) => (t.id === txId ? { ...t, splits: (t.splits || []).map((s) => (s.id === splitId ? { ...s, paid, paidDate: paid ? today() : null } : s)) } : t)));
   const markAllPaid = (partyId) => setTransactions((prev) => prev.map((t) => ({ ...t, splits: (t.splits || []).map((s) => (s.partyId === partyId && !s.paid ? { ...s, paid: true, paidDate: today() } : s)) })));
 
@@ -1383,11 +1582,24 @@ function People({ parties, setParties, transactions, setTransactions, setTab }) 
           <Field label="Relation"><select value={f.relation} onChange={(e) => setF({ ...f, relation: e.target.value })} className={inputCls}>{RELATIONS.map((r) => <option key={r} value={r}>{r}</option>)}</select></Field>
           <Btn onClick={add} disabled={!f.name || parties.length >= MAX_PARTIES} className="w-full"><Plus size={15} /> Add</Btn>
         </div>
-        {parties.length >= MAX_PARTIES && <p className="text-xs mt-2" style={{ color: BRAND.red }}>You've reached the 20-person limit.</p>}
+        {parties.length >= MAX_PARTIES && <p className="text-xs mt-2" style={{ color: BRAND.red }}>You've reached the 50-person limit.</p>}
       </Card>
+      {parties.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {["All", ...RELATIONS].map((r) => {
+            const active = filterRelation === r;
+            const color = RELATION_COLOR[r];
+            return (
+              <button key={r} onClick={() => setFilterRelation(r)} className="px-3 py-1 rounded-full text-xs font-medium transition-colors border" style={active ? { backgroundColor: color || BRAND.plum, color: "#fff", borderColor: color || BRAND.plum } : { backgroundColor: "white", color: "#78716c", borderColor: "#e7e5e4" }}>
+                {r}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {!parties.length ? <Empty icon={Users} title="No one added yet" body="Add family, friends, or colleagues here so you can split costs and track who still owes you." /> : (
         <div className="space-y-2">
-          {parties.map((p) => { const t = totals[p.id] || { owed: 0, paid: 0, items: [] }; const open = openId === p.id; return (
+          {parties.filter((p) => filterRelation === "All" || p.relation === filterRelation).map((p) => { const t = totals[p.id] || { owed: 0, paid: 0, items: [] }; const open = openId === p.id; return (
             <Card key={p.id} className="p-4">
               <button onClick={() => setOpenId(open ? null : p.id)} className="w-full flex items-center justify-between gap-3 text-left">
                 <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full bg-stone-100 flex items-center justify-center text-sm font-semibold text-stone-600 shrink-0">{p.name.slice(0, 1).toUpperCase()}</div><div className="min-w-0"><div className="font-medium text-stone-900 truncate">{p.name}</div><div className="text-xs text-stone-400">{p.phone || "—"}</div></div></div>
@@ -1409,6 +1621,12 @@ function People({ parties, setParties, transactions, setTransactions, setTab }) 
                       <div className="flex items-center gap-2 shrink-0"><Num className={split.paid ? "text-stone-400 line-through" : "text-stone-900"}>{idr(split.amount)}</Num><button onClick={() => setSplitPaid(tx.id, split.id, !split.paid)} className={"text-xs px-2 py-0.5 rounded-full border " + (split.paid ? "fp-border-success-light fp-text-success fp-bg-success-tint-static" : "border-stone-300 text-stone-500")}>{split.paid ? "Paid" : "Mark paid"}</button></div>
                     </div>
                   )) : <Muted>No splits yet.</Muted>}
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-xs text-stone-400">Relation:</span>
+                    <select value={p.relation || RELATIONS[0]} onChange={(e) => updateParty(p.id, { relation: e.target.value })} className="text-xs border border-stone-200 rounded px-2 py-0.5 fp-input bg-white">
+                      {RELATIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
                   <div className="flex items-center justify-between pt-2 flex-wrap gap-2">
                     <Btn variant="danger" onClick={() => del(p.id)} disabled={t.owed > 0 || t.paid > 0} className="text-xs">{t.owed > 0 || t.paid > 0 ? "Linked to transactions" : <><Trash2 size={13} /> Remove</>}</Btn>
                     <div className="flex items-center gap-2">
@@ -1433,7 +1651,7 @@ function People({ parties, setParties, transactions, setTransactions, setTab }) 
 }
 
 /* ----------------------------- IMPORT ----------------------------- */
-function Importer({ accounts, setAccounts, setTransactions, setSubscriptions, recall, learn, matchSub, setTab, scopes, scopeColor, defaultScope, drafts, setDrafts, importHistory = [], onImported }) {
+function Importer({ accounts, setAccounts, transactions, setTransactions, setSubscriptions, recall, learn, matchSub, setTab, scopes, scopeColor, defaultScope, drafts, setDrafts, importHistory = [], onImported }) {
   const [mode, setMode] = useState("file"); const [acctId, setAcctId] = useState(accounts[0]?.id || ""); const [busy, setBusy] = useState(""); const [err, setErr] = useState("");
   const [pendingFile, setPendingFile] = useState(null); // { name, hash, size } — set after hash computed, used at save time
   const [dupWarning, setDupWarning] = useState(null); // existing import_history record + file reference
@@ -1450,12 +1668,12 @@ function Importer({ accounts, setAccounts, setTransactions, setSubscriptions, re
     const defaultCat = isPay ? "Card Payment" : direction === "income" ? incomeCat : direction === "transfer" ? "Transfers" : (sub ? sub.category : (mem?.category || en?.category || ""));
     return { id: uid(), date: d.date, desc: d.desc || "Unknown", amount, direction, fx: d.fx || "", payer: d.payer || "", category: defaultCat, scope: sub ? sub.scope : (mem?.scope || en?.scope || defaultScope), recurring: sub ? true : !!(mem?.recurring || en?.recurring), accountId: acctId, splits: [], _include: true, _reappeared: !!(sub && sub.status === "cancelled") };
   }).filter((x) => x.amount > 0);
-  const proceedWithExtract = async (file, hash) => { setBusy("Reading your statement…"); try { const raw = await extractFromFile(file); if (!raw.length) { setErr("No transactions found. Try a clearer file, or paste the rows as CSV."); setBusy(""); return; } const dated = raw.map((r) => ({ ...r, date: parseIndoDate(r.date) })); setDrafts(enrichItems(dated)); setPendingFile({ name: file.name, hash, size: file.size }); setBusy(""); } catch (e2) { setErr(e2.message); setBusy(""); } };
+  const proceedWithExtract = async (file, hash) => { setBusy("Reading your statement…"); try { const raw = await extractFromFile(file); if (!raw.length) { setErr("No transactions found. Try a clearer file, or paste the rows as CSV."); setBusy(""); return; } const dated = raw.map((r) => ({ ...r, date: parseIndoDate(r.date) })); setDrafts(flagDuplicates(enrichItems(dated), transactions)); setPendingFile({ name: file.name, hash, size: file.size }); setBusy(""); } catch (e2) { setErr(e2.message); setBusy(""); } };
   const onFile = async (e) => { const file = e.target.files?.[0]; if (!file) return; setErr(""); setBusy("Checking file…"); e.target.value = ""; const hash = await hashFile(file); const existing = importHistory.find((r) => r.fileHash === hash); if (existing) { setDupWarning({ ...existing, _file: file, _hash: hash }); setBusy(""); return; } await proceedWithExtract(file, hash); };
   const onCSV = (text) => { setErr(""); const lines = text.trim().split(/\r?\n/).filter(Boolean); if (!lines.length) return; const hasHeader = /date|amount|desc|tanggal|jumlah|keterangan/.test(lines[0].toLowerCase()); const body = hasHeader ? lines.slice(1) : lines; const items = body.map((line) => { const cols = splitCSV(line); const amt = parseFloat((cols[2] ?? cols[cols.length - 1] ?? "0").toString().replace(/[^\d.-]/g, "")) || 0; return { date: normDate((cols[0] || "").trim()), desc: (cols[1] || cols[0] || "").trim(), amount: Math.abs(amt), kind: "purchase" }; }).filter((i) => i.amount > 0); if (!items.length) { setErr("Couldn't read any rows. Expected: date, description, amount."); return; } setDrafts(enrichItems(items)); };
   const autoTag = async () => { const need = drafts.map((d, i) => ({ i, d })).filter((x) => !x.d.category && x.d.direction === "expense"); if (!need.length) return; setBusy("Tagging categories…"); setErr(""); try { const cats = await aiCategorize(need.map((x) => x.d.desc)); setDrafts((prev) => { const next = [...prev]; need.forEach((x, k) => { if (cats[k] && CATEGORIES.includes(cats[k])) next[x.i] = { ...next[x.i], category: cats[k] }; }); return next; }); } catch (e) { setErr(e.message); } finally { setBusy(""); } };
   const save = () => {
-    const keep = drafts.filter((d) => d._include).map(({ _include, _reappeared, ...t }) => ({ ...t, category: t.category || (t.direction === "payment" ? "Card Payment" : t.direction === "transfer" ? "Transfers" : "Other") }));
+    const keep = drafts.filter((d) => d._include).map(({ _include, _reappeared, _potentialDuplicate, ...t }) => ({ ...t, category: t.category || (t.direction === "payment" ? "Card Payment" : t.direction === "transfer" ? "Transfers" : "Other") }));
     keep.forEach((t) => learn(t.desc, t.category, t.scope, t.recurring));
     setSubscriptions((prev) => { const next = [...prev]; keep.filter((t) => t.recurring && t.direction === "expense").forEach((t) => { const key = merchantKey(t.desc); const plan = planOf(t); const idx = next.findIndex((s) => s.key === key && (s.plan || "") === plan); if (idx >= 0) next[idx] = { ...next[idx], monthly: t.amount, name: t.desc, status: "active", cancelledAt: null }; else next.push({ id: uid(), key, plan, name: t.desc, category: t.category, scope: t.scope, monthly: t.amount, status: "active", cancelledAt: null }); }); return next; });
     setAccounts((prev) => keep.reduce((accs, t) => applyBalanceDelta(accs, t.accountId, signedAmount(t)), prev));
@@ -1466,6 +1684,7 @@ function Importer({ accounts, setAccounts, setTransactions, setSubscriptions, re
   const editDraft = (id, patch) => setDrafts((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
   if (!accounts.length) return <Empty icon={CreditCard} title="Set up an account first" body="Tell FinPlus which bank or wallet this is (credit, debit, QRIS, etc.) so imports land in the right place." action={<Btn onClick={() => setTab("accounts")}><Plus size={15} /> Go to Setup</Btn>} />;
   const reappeared = drafts.filter((d) => d._reappeared).length;
+  const dupeCount = drafts.filter((d) => d._potentialDuplicate).length;
   return (
     <div className="space-y-4">
       {!drafts.length ? (
@@ -1520,16 +1739,18 @@ function Importer({ accounts, setAccounts, setTransactions, setSubscriptions, re
             <div className="flex gap-2"><Btn variant="outline" onClick={autoTag} disabled={!!busy}>{busy === "Tagging categories…" ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} Auto-tag rest</Btn><Btn variant="ghost" onClick={() => setDrafts([])}><X size={15} /> Cancel</Btn><Btn onClick={save}><Check size={15} /> Save</Btn></div>
           </div>
           {reappeared > 0 && <div className="text-sm rounded-lg px-3 py-2 flex items-center gap-2 border fp-text-warn fp-bg-warn-tint-static fp-border-warn"><AlertTriangle size={15} /> {reappeared} cancelled subscription{reappeared > 1 ? "s" : ""} charged again — check the highlighted rows.</div>}
+          {dupeCount > 0 && <div className="text-sm rounded-lg px-3 py-2 flex items-center gap-2" style={{ background: BRAND.goldTint, border: `1px solid ${BRAND.goldLight}`, color: BRAND.goldDark }}><AlertTriangle size={15} /> {dupeCount} transaction{dupeCount > 1 ? "s" : ""} may already be recorded manually — unchecked by default. Review and include only if not a duplicate.</div>}
           {err && <div className="text-sm" style={{ color: BRAND.red }}>{err}</div>}
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead><tr className="text-left text-xs text-stone-400 border-b border-stone-200"><th className="p-2 w-8"></th><th className="p-2">Date</th><th className="p-2">Merchant / source</th><th className="p-2">Category</th><th className="p-2">Profile</th><th className="p-2 text-center">Recurs</th><th className="p-2 text-right">Amount</th></tr></thead>
             <tbody>{drafts.map((d) => (
-              <tr key={d.id} className={"border-b border-stone-100 " + (d._include ? "" : "opacity-40")} style={d._reappeared ? { backgroundColor: BRAND.goldTint } : d.direction === "income" ? { backgroundColor: BRAND.successTint } : undefined}>
+              <tr key={d.id} className={"border-b border-stone-100 " + (d._include ? "" : "opacity-40")} style={d._potentialDuplicate ? { backgroundColor: BRAND.goldTint } : d._reappeared ? { backgroundColor: BRAND.goldTint } : d.direction === "income" ? { backgroundColor: BRAND.successTint } : undefined}>
                 <td className="p-2"><input type="checkbox" checked={d._include} onChange={(e) => editDraft(d.id, { _include: e.target.checked })} className="fp-accent-brand" /></td>
                 <td className="p-2"><input value={d.date} onChange={(e) => editDraft(d.id, { date: e.target.value })} className="num w-24 border border-transparent hover:border-stone-300 rounded px-1 py-0.5 fp-input" /></td>
                 <td className="p-2">
                   <div className="flex items-center gap-1">{d.direction === "income" ? <ArrowDownLeft size={13} className="fp-text-success shrink-0" /> : d.direction === "payment" || d.direction === "transfer" ? null : <ArrowUpRight size={13} className="text-stone-300 shrink-0" />}<input value={d.desc} onChange={(e) => editDraft(d.id, { desc: e.target.value })} className="w-full min-w-[140px] border border-transparent hover:border-stone-300 rounded px-1 py-0.5 fp-input" />{d.fx && <span className="text-[11px] text-stone-400 num ml-1">{d.fx}</span>}</div>
                   {d.direction === "income" && <input value={d.payer} onChange={(e) => editDraft(d.id, { payer: e.target.value })} placeholder="From whom? (e.g. PT Acme — payroll)" className="mt-1 w-full min-w-[140px] text-xs border border-stone-200 rounded px-1.5 py-0.5 fp-input" />}
+                  {d._potentialDuplicate && <div className="mt-0.5 flex items-center gap-1 text-[10px]" style={{ color: BRAND.goldDark }}><AlertTriangle size={10} /> duplicate of: {d._potentialDuplicate.desc} · {d._potentialDuplicate.date}</div>}
                 </td>
                 <td className="p-2">
                   <select value={d.category} onChange={(e) => editDraft(d.id, { category: e.target.value })} className={((d.category) ? "border border-stone-200" : "border fp-border-warn fp-bg-warn-tint-static") + " rounded px-1.5 py-1 focus:outline-none fp-input"}>
