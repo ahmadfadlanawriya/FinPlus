@@ -7,7 +7,7 @@ import {
 import {
   Wallet, LayoutDashboard, ListOrdered, Upload, CreditCard, Target,
   Plus, Trash2, Sparkles, AlertTriangle, Check, Loader2, X, Search,
-  FileText, Banknote, ChevronDown, RefreshCw, PiggyBank, Plane, Ban, RotateCcw, Users, Menu, MessageCircle, Landmark, Image as ImageIcon, ChevronRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, LogOut, UserCircle, HandCoins, LayoutList, TableIcon, TrendingUp, CalendarRange,
+  FileText, Banknote, ChevronDown, RefreshCw, PiggyBank, Plane, Ban, RotateCcw, Users, Menu, MessageCircle, Landmark, Image as ImageIcon, ChevronRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, LogOut, UserCircle, HandCoins, LayoutList, TableIcon, TrendingUp, CalendarRange, ArrowUpDown, Pencil,
 } from "lucide-react";
 
 /* ----------------------------- brand palette ----------------------------- */
@@ -22,8 +22,9 @@ const BRAND = {
 
 /* ----------------------------- constants ----------------------------- */
 const CATEGORIES = [
-  "Food & Dining", "Groceries", "Coffee n Cafe", "Transport", "Shopping", "Bills & Utilities",
-  "Subscriptions", "Entertainment", "Health", "Education", "Travel",
+  "Food & Dining", "Online Food Orders", "Groceries", "Coffee n Cafe", "Transport", "Ride Hailing",
+  "Shopping", "Bills & Utilities", "Subscriptions", "Mobile App Subscription",
+  "Entertainment", "Health", "Education", "Travel",
   "Transfers", "Cash & ATM", "Fees & Interest", "Card Payment", "Salary", "Income", "Other",
 ];
 const INCOME_CATEGORIES = ["Salary", "Income", "Transfers", "Other"];
@@ -58,9 +59,12 @@ const SAAS = [
   "atlassian", "jira", "linear.app", "notion", "figma", "framer", "slack", "zoom", "twilio", "sendgrid", "stripe",
   "wati.io", "wati", "bolt", "stackblitz", "supabase", "planetscale", "sentry", "hubspot", "intercom",
   "airtable", "zapier", "adobe", "microsoft 365", "office 365", "canva", "loom", "postman", "retool",
-  "clerk", "auth0", "algolia", "snowflake", "openrouter", "huggingface", "replicate", "fly.io", "railway", "spotify", "netflix", "youtube premium",
+  "clerk", "auth0", "algolia", "snowflake", "openrouter", "huggingface", "replicate", "fly.io", "railway",
   "facebk", "facebook", "meta ads", "make.com", "whatsform", "typeform", "glide", "docsautomator", "jungleworks",
 ];
+const MOBILE_SUB_KW = ["apple.com", "itunes", "google play", "google youtube", "spotify", "netflix", "youtube premium"];
+const FOOD_ORDER_KW = ["grabfood", "gofood", "shopee food", "shopeefood", "mcdelivery", "kfc delivery", "pizza hut delivery"];
+const RIDE_HAILING_KW = ["blue bird", "bluebird", "gojek", "maxim", "indrive", "in-drive"];
 const FEE_KW = ["membership fee", "e-statement fee", "statement fee", "biaya notifikasi", "annual fee", "iuran", "admin fee", "biaya adm", "pajak bunga", "administration fee", "handling charges", "bea meterai", "biaya materai", "stamp duty", "notification charge", "e-billing"];
 const CURRENCY = {
   MYR: { c: "Malaysia", flag: "\u{1F1F2}\u{1F1FE}" }, HKD: { c: "Hong Kong", flag: "\u{1F1ED}\u{1F1F0}" },
@@ -75,6 +79,10 @@ const CURRENCY = {
 
 function enrich(desc) {
   const d = (desc || "").toLowerCase();
+  if (FOOD_ORDER_KW.some((k) => d.includes(k))) return { category: "Online Food Orders", scope: "personal", recurring: false };
+  if (MOBILE_SUB_KW.some((k) => d.includes(k))) return { category: "Mobile App Subscription", scope: "personal", recurring: true };
+  if (RIDE_HAILING_KW.some((k) => d.includes(k))) return { category: "Ride Hailing", scope: "personal", recurring: false };
+  if (d.startsWith("grab")) return { category: "Ride Hailing", scope: "personal", recurring: false };
   if (SAAS.some((k) => d.includes(k))) return { category: "Subscriptions", scope: "work", recurring: true };
   if (FEE_KW.some((k) => d.includes(k))) return { category: "Fees & Interest", scope: "personal", recurring: true };
   return null;
@@ -260,6 +268,13 @@ async function loadAllData(userId) {
     supabase.from("balance_history").select("*").eq("user_id", userId).order("recorded_at", { ascending: false }),
     supabase.from("import_history").select("*").eq("user_id", userId).order("imported_at", { ascending: false }),
   ]);
+  // If any critical table query fails, throw so loadAllData's catch sets loadError=true
+  // instead of silently setting empty state and triggering sync that deletes all rows
+  if (ar.error) throw new Error("accounts: " + ar.error.message);
+  if (tr.error) throw new Error("transactions: " + tr.error.message);
+  if (gr.error) throw new Error("goals: " + gr.error.message);
+  if (sr.error) throw new Error("subscriptions: " + sr.error.message);
+  if (pr.error) throw new Error("parties: " + pr.error.message);
   return {
     accounts: (ar.data || []).map(fromDbAccount),
     transactions: (tr.data || []).map(fromDbTx),
@@ -378,6 +393,15 @@ async function extractFromFile(file) {
     "- 'CASHBACK ...': kind 'refund', hasCR true.\\n" +
     "- Installment rows (e.g. 'CHANEL HONG KONG 1/ 6 669,913.91'): kind 'purchase', hasCR false; amount is the installment figure.\\n" +
     "- A CR row for a purchase merchant (e.g. 'CHANEL HONG KONG... 4,019,483.43 CR'): kind 'refund', hasCR true (return/reversal).\\n" +
+    "Mayapada Skorcard credit card statements (BANK MAYAPADA, VISA Skorcard):\\n" +
+    "- Columns: TANGGAL TRANSAKSI | TANGGAL PEMBUKUAN | PERINCIAN TRANSAKSI | JUMLAH TAGIHAN. Always use TANGGAL TRANSAKSI (first date column).\\n" +
+    "- Date format: DD/MM/YYYY (e.g. '19/05/2026') \u2014 return exactly as printed including the year.\\n" +
+    "- Amount format: comma as thousands separator (e.g. '145,000' = 145000, '3,721,528' = 3721528). Strip all commas; return a plain integer.\\n" +
+    "- Foreign-merchant rows (e.g. 'APPLE.COM/BILL ITUNES.COM IE', 'Google YouTube 650-2530000 US'): JUMLAH TAGIHAN already shows the IDR-converted amount \u2014 use it as 'amount'; set fx to empty string (no FX breakdown is printed on this statement).\\n" +
+    "- 'PEMBAYARAN VIA BI-FAST': kind 'payment', hasCR true.\\n" +
+    "- 'TAGIHAN SEBELUMNYA': skip (previous balance header).\\n" +
+    "- 'TOTAL' (appears after PEMBAYARAN section and after TRANSAKSI section): skip both.\\n" +
+    "- Fee rows \u2014 include as kind 'purchase', hasCR false: 'BIAYA E-STATEMENT ...', 'BIAYA PEMBAYARAN BANK LAIN', 'BIAYA NOTIFIKASI SMS', 'Biaya DCC ...'.\\n" +
     "BOTH statement types \u2014 kind rules:\\n" +
     "- 'payment': credit card bill payments (PAYMT, PAYMENT-THANK YOU, PEMBAYARAN, THRU E-BANK, PELUNASAN, BILLPAYMENT TO CCARD, KARTU KREDIT/PL).\\n" +
     "- 'refund': incoming credits, reversals, cashbacks, interest, remittances (CR rows that are NOT payments, REMITTANCE CR, CREDIT INTEREST, OVERBOOKING FROM, DIRECT CREDIT, BUNGA, CASHBACK).\\n" +
@@ -527,10 +551,12 @@ function App({ user }) {
   }, []); // eslint-disable-line
 
   useEffect(() => {
+    let cancelled = false;
     setLoadError(false);
     (async () => {
       try {
         const d = await loadAllData(user.id);
+        if (cancelled) return; // stale fetch — a newer effect run already took over
         setAccounts(d.accounts); setGoals(d.goals); setMemory(d.memory);
         setScopes(d.scopes || DEFAULT_SCOPES);
         setSubscriptions(d.subscriptions); setParties(d.parties); setTripMeta(d.tripMeta); setStatements(d.statements); setBalanceHistory(d.balanceHistory); setImportHistory(d.importHistory);
@@ -545,10 +571,12 @@ function App({ user }) {
         const dr = loadDrafts(); if (dr) setDrafts(dr);
         setReady(true); // only set ready after all state is populated
       } catch (e) {
+        if (cancelled) return;
         console.error("[db] load", e);
         setLoadError(true); // never touch ready — keeps sync effects disabled
       }
     })();
+    return () => { cancelled = true; };
   }, [user.id]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("accounts", user.id, accounts.map((a) => toDbAccount(a, user.id)), (tbl, msg) => setSyncError(`Save failed (${tbl}): ${msg}`)), 600); return () => clearTimeout(t); }, [accounts, ready]); // eslint-disable-line
   useEffect(() => { // eslint-disable-line
@@ -571,7 +599,25 @@ function App({ user }) {
   useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("subscriptions", user.id, subscriptions.map((s) => toDbSub(s, user.id))), 600); return () => clearTimeout(t); }, [subscriptions, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("parties", user.id, parties.map((p) => toDbParty(p, user.id))), 600); return () => clearTimeout(t); }, [parties, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const rows = Object.entries(memory).map(([merchant_key, v]) => ({ user_id: user.id, merchant_key, category: v.category || null, scope: v.scope || null, recurring: !!v.recurring })); const t = setTimeout(() => syncTableByKey("memory", user.id, rows, "merchant_key"), 600); return () => clearTimeout(t); }, [memory, ready]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const rows = Object.entries(tripMeta).map(([trip_key, v]) => ({ user_id: user.id, trip_key, purpose: v.purpose || null, banner: v.banner || null, name: v.name || null })); const t = setTimeout(() => syncTableByKey("trip_meta", user.id, rows, "trip_key"), 600); return () => clearTimeout(t); }, [tripMeta, ready]); // eslint-disable-line
+  useEffect(() => { // eslint-disable-line
+    if (!ready) return;
+    const entries = Object.entries(tripMeta);
+    const u = user.id;
+    const t = setTimeout(async () => {
+      for (const [trip_key, v] of entries) {
+        const row = { user_id: u, trip_key, purpose: v.purpose || null, banner: v.banner || null, name: v.name || null };
+        const { data } = await supabase.from("trip_meta").update(row).eq("user_id", u).eq("trip_key", trip_key).select();
+        if (!data?.length) await supabase.from("trip_meta").insert(row);
+      }
+      if (entries.length) {
+        const ks = entries.map(([k]) => k);
+        await supabase.from("trip_meta").delete().eq("user_id", u).not("trip_key", "in", `(${ks.map((k) => `'${k}'`).join(",")})`);
+      } else {
+        await supabase.from("trip_meta").delete().eq("user_id", u);
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [tripMeta, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("statements", user.id, statements.map((s) => toDbStatement(s, user.id))), 600); return () => clearTimeout(t); }, [statements, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("import_history", user.id, importHistory.map((r) => toDbImportHistory(r, user.id))), 600); return () => clearTimeout(t); }, [importHistory, ready]); // eslint-disable-line
   useEffect(() => { if (!ready) return; const t = setTimeout(() => supabase.from("profiles").upsert({ id: user.id, scopes }, { onConflict: "id" }).then(({ error: e }) => { if (e) console.error("[db] scopes", e); }), 600); return () => clearTimeout(t); }, [scopes, ready]); // eslint-disable-line
@@ -1187,9 +1233,40 @@ function Transactions({ transactions, setTransactions, accounts, setAccounts, mo
   const kinds = useMemo(() => [...new Set(accounts.map((a) => a.type))].sort(), [accounts]);
   const filteredAccounts = fKind ? accounts.filter((a) => a.type === fKind) : accounts;
   const rows = useMemo(() => transactions.filter((t) => dateRange ? (t.date >= dateRange.from && t.date <= dateRange.to) : monthKey(t.date) === month).filter((t) => !fKind || acctTypeMap[t.accountId] === fKind).filter((t) => !fCat || t.category === fCat).filter((t) => !fScope || t.scope === fScope).filter((t) => !fAcct || t.accountId === fAcct).filter((t) => !q || t.desc.toLowerCase().includes(q.toLowerCase())).sort((a, b) => b.date.localeCompare(a.date)), [transactions, month, dateRange, fKind, fCat, fScope, fAcct, q, acctTypeMap]);
+
+  // Period expenses unaffected by active filters — used for the summary cards
+  const periodExpenses = useMemo(() => transactions.filter((t) => (dateRange ? (t.date >= dateRange.from && t.date <= dateRange.to) : monthKey(t.date) === month) && t.direction === "expense"), [transactions, month, dateRange]);
+  const personalTotal = useMemo(() => periodExpenses.filter((t) => t.scope !== "work").reduce((s, t) => s + netOf(t), 0), [periodExpenses]);
+  const workExpenses = useMemo(() => periodExpenses.filter((t) => t.scope === "work"), [periodExpenses]);
+  const workTotal = useMemo(() => workExpenses.reduce((s, t) => s + t.amount, 0), [workExpenses]);
+  const workSplitByParty = useMemo(() => {
+    const map = {};
+    workExpenses.forEach((t) => (t.splits || []).forEach((s) => { const name = parties.find((p) => p.id === s.partyId)?.name || s.partyId; map[name] = (map[name] || 0) + (Number(s.amount) || 0); }));
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [workExpenses, parties]);
+  const workMyShare = useMemo(() => workExpenses.reduce((s, t) => s + netOf(t), 0), [workExpenses]);
   const update = (id, patch) => setTransactions((prev) => prev.map((t) => { if (t.id !== id) return t; const next = { ...t, ...patch }; if (patch.category) learn(t.desc, patch.category, next.scope, next.recurring); if (patch.scope) learn(t.desc, next.category, patch.scope, next.recurring); return next; }));
   const updateSplits = (id, splits) => setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, splits } : t)));
   const del = (id) => { const t = transactions.find((x) => x.id === id); if (t) setAccounts((prev) => applyBalanceDelta(prev, t.accountId, -signedAmount(t))); setTransactions((prev) => prev.filter((x) => x.id !== id)); };
+  const [editOpen, setEditOpen] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const openEdit = (t) => { setEditOpen(t.id); setEditForm({ date: t.date, desc: t.desc, amount: String(t.amount), accountId: t.accountId || "", direction: t.direction }); setSplitOpen(null); };
+  const closeEdit = () => setEditOpen(null);
+  const saveEdit = () => {
+    const orig = transactions.find((x) => x.id === editOpen); if (!orig) return;
+    const newAmount = Math.abs(parseFloat(String(editForm.amount).replace(/[^\d.]/g, "")) || 0);
+    const newT = { ...orig, date: editForm.date, desc: editForm.desc, amount: newAmount, accountId: editForm.accountId, direction: editForm.direction };
+    const accountChanged = editForm.accountId !== orig.accountId;
+    const valueChanged = newAmount !== orig.amount || editForm.direction !== orig.direction;
+    if (accountChanged || valueChanged) {
+      setAccounts((prev) => {
+        const without = applyBalanceDelta(prev, orig.accountId, -signedAmount(orig));
+        return applyBalanceDelta(without, newT.accountId, signedAmount(newT));
+      });
+    }
+    setTransactions((prev) => prev.map((x) => (x.id === editOpen ? newT : x)));
+    closeEdit();
+  };
   const selected = Object.keys(sel).filter((k) => sel[k]);
   const bulkSet = (patch) => { setTransactions((prev) => prev.map((t) => (sel[t.id] ? { ...t, ...patch } : t))); rows.filter((t) => sel[t.id]).forEach((t) => learn(t.desc, patch.category || t.category, patch.scope || t.scope, t.recurring)); setSel({}); };
   const bulkDel = () => { const toDelete = rows.filter((t) => sel[t.id]); setAccounts((prev) => toDelete.reduce((accs, t) => applyBalanceDelta(accs, t.accountId, -signedAmount(t)), prev)); setTransactions((prev) => prev.filter((t) => !sel[t.id])); setSel({}); };
@@ -1197,6 +1274,28 @@ function Transactions({ transactions, setTransactions, accounts, setAccounts, mo
   if (!transactions.length) return <Empty icon={ListOrdered} title="No transactions" body="Import a statement or add transactions to start tracking." />;
   return (
     <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Card className="p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-1">Personal spending</div>
+          <div className="text-xl font-bold" style={{ color: BRAND.blue }}>{idr(personalTotal)}</div>
+          <div className="text-xs text-stone-400 mt-0.5">Your net share · excl. work</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400 mb-1">Work spending</div>
+          <div className="text-xl font-bold" style={{ color: BRAND.plum }}>{idr(workTotal)}</div>
+          {workMyShare < workTotal && <div className="text-xs mt-0.5" style={{ color: BRAND.plum }}>Your share: {idr(workMyShare)}</div>}
+          {workSplitByParty.length > 0 && (
+            <div className="mt-2 space-y-1 border-t border-stone-100 pt-2">
+              {workSplitByParty.map(([name, amt]) => (
+                <div key={name} className="flex items-center justify-between text-xs">
+                  <span className="text-stone-500 truncate">{name}</span>
+                  <Num className="text-stone-700 font-medium shrink-0 ml-2">{idr(amt)}</Num>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px]"><Search size={15} className="absolute left-2.5 top-2.5 text-stone-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search merchant…" className={inputCls + " pl-8"} /></div>
         <select value={fKind} onChange={(e) => { setFKind(e.target.value); setFAcct(""); }} className={inputCls + " w-auto capitalize"}><option value="">All types</option>{kinds.map((k) => <option key={k} value={k}>{k}</option>)}</select>
@@ -1233,8 +1332,33 @@ function Transactions({ transactions, setTransactions, accounts, setAccounts, mo
                     {t.direction === "transfer" && <div className="text-[10px] text-stone-400">transfer</div>}
                     {t.direction === "expense" && net !== t.amount && <div className="text-[11px] fp-text-success">your share {idr(net)}</div>}
                   </td>
-                  <td className="p-2"><Btn variant="danger" onClick={() => del(t.id)}><Trash2 size={14} /></Btn></td>
+                  <td className="p-2"><div className="flex items-center gap-1"><Btn variant="ghost" onClick={() => editOpen === t.id ? closeEdit() : openEdit(t)}><Pencil size={14} /></Btn><Btn variant="danger" onClick={() => del(t.id)}><Trash2 size={14} /></Btn></div></td>
                 </tr>
+                {editOpen === t.id && (
+                  <tr className="border-b border-stone-200 bg-amber-50/60">
+                    <td colSpan={9} className="px-4 py-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 items-end">
+                        <Field label="Date"><input type="date" value={editForm.date || ""} onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))} className={inputCls} /></Field>
+                        <Field label="Description"><input value={editForm.desc || ""} onChange={(e) => setEditForm((f) => ({ ...f, desc: e.target.value }))} className={inputCls + " col-span-2"} /></Field>
+                        <Field label="Amount"><input value={editForm.amount || ""} onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))} className={inputCls + " num"} /></Field>
+                        <Field label="Account">
+                          <select value={editForm.accountId || ""} onChange={(e) => setEditForm((f) => ({ ...f, accountId: e.target.value }))} className={inputCls}>
+                            {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                          </select>
+                        </Field>
+                        <Field label="Direction">
+                          <select value={editForm.direction || "expense"} onChange={(e) => setEditForm((f) => ({ ...f, direction: e.target.value }))} className={inputCls}>
+                            {["expense", "income", "payment", "transfer"].map((d) => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </Field>
+                        <div className="flex gap-2">
+                          <Btn onClick={saveEdit} className="flex-1"><Check size={14} /> Save</Btn>
+                          <Btn variant="ghost" onClick={closeEdit}><X size={14} /></Btn>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 {splitOpen === t.id && <SplitEditorRow t={t} parties={parties} onChange={(splits) => updateSplits(t.id, splits)} colSpan={9} setTab={setTab} />}
               </React.Fragment>
             ); })}
@@ -1335,13 +1459,23 @@ function TripCard({ trip, otherTrips, scopes, scopeColor, banner, tripName, onSe
           </button>
           <div className="text-right shrink-0 flex items-center gap-2">
             <div><Num className="font-semibold text-stone-900">{idr(trip.total)}</Num>{showNet && <div className="text-xs fp-text-success">your share {idr(trip.net)}</div>}</div>
+            <ChevronDown size={16} className={"text-stone-400 transition-transform duration-200 " + (open ? "rotate-180" : "")} />
             <label htmlFor={bannerId} className="cursor-pointer text-stone-400 hover:text-stone-600" title="Add a banner photo"><ImageIcon size={16} /></label>
             <input id={bannerId} type="file" accept="image/*" onChange={onBanner} className="hidden" />
           </div>
         </div>
       )}
-      {banner && showNet && <div className="text-xs fp-text-success text-right -mt-1 mb-1">your share {idr(trip.net)}</div>}
-      <div className="flex flex-wrap items-center gap-2 mt-3">
+      {banner && (
+        <div className="flex items-center justify-between gap-2 mt-2">
+          {showNet && <div className="text-xs fp-text-success">your share {idr(trip.net)}</div>}
+          <button onClick={() => setOpen(!open)} className="ml-auto flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600 transition-colors">
+            <ChevronDown size={14} className={"transition-transform duration-200 " + (open ? "rotate-180" : "")} />
+            {open ? "Minimise" : "Expand"}
+          </button>
+        </div>
+      )}
+      {open && (
+      <><div className="flex flex-wrap items-center gap-2 mt-3">
         <span className="text-xs text-stone-400">Trip with:</span>
         <select value={trip.purpose} onChange={(e) => onSetPurpose(trip.key, e.target.value)} style={{ color: trip.purpose ? scopeColor(trip.purpose) : BRAND.goldDark }} className={(trip.purpose ? "border-stone-200" : "fp-border-warn fp-bg-warn-tint-static") + " border rounded-lg px-2 py-1 text-sm capitalize focus:outline-none fp-input"}>
           <option value="">tag purpose…</option>{scopes.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
@@ -1353,7 +1487,6 @@ function TripCard({ trip, otherTrips, scopes, scopeColor, banner, tripName, onSe
       <div className="flex flex-wrap gap-2 mt-3">
         <Btn variant="outline" onClick={() => { setAdding(!adding); setPicking(false); }} className="text-xs py-1.5"><Plus size={13} /> Add expense</Btn>
         <Btn variant="ghost" onClick={() => { const next = !picking; setPicking(next); setAdding(false); if (!next) setPickSearch(""); }} className="text-xs py-1.5">Assign existing…</Btn>
-        <Btn variant="ghost" onClick={() => setOpen(!open)} className="text-xs py-1.5">{open ? "Hide" : "Show"} items</Btn>
       </div>
 
       {adding && (
@@ -1387,8 +1520,7 @@ function TripCard({ trip, otherTrips, scopes, scopeColor, banner, tripName, onSe
         </div>
       )}
 
-      {open && (
-        <div className="mt-3 border-t border-stone-100 pt-2">
+      <div className="mt-3 border-t border-stone-100 pt-2">
           <div className="overflow-x-auto">
             <table className="w-full text-sm"><tbody>
               {trip.items.slice().sort((a, b) => a.date.localeCompare(b.date)).map((t) => (
@@ -1420,7 +1552,7 @@ function TripCard({ trip, otherTrips, scopes, scopeColor, banner, tripName, onSe
             </tbody></table>
           </div>
         </div>
-      )}
+      </>)}
       </div>
     </Card>
   );
@@ -1589,7 +1721,7 @@ function Subscriptions({ subscriptions, setSubscriptions, transactions, setTrans
 
 /* ----------------------------- PEOPLE ----------------------------- */
 function People({ parties, setParties, transactions, setTransactions, setTab }) {
-  const [f, setF] = useState({ name: "", phone: "", relation: RELATIONS[0] }); const [openId, setOpenId] = useState(null); const [filterRelation, setFilterRelation] = useState("All");
+  const [f, setF] = useState({ name: "", phone: "", relation: RELATIONS[0] }); const [openId, setOpenId] = useState(null); const [filterRelation, setFilterRelation] = useState("All"); const [sortBy, setSortBy] = useState("loan");
   const totals = useMemo(() => {
     const map = {}; parties.forEach((p) => (map[p.id] = { owed: 0, paid: 0, items: [] }));
     transactions.forEach((t) => (t.splits || []).forEach((s) => { if (!map[s.partyId]) return; if (s.paid) map[s.partyId].paid += Number(s.amount) || 0; else map[s.partyId].owed += Number(s.amount) || 0; map[s.partyId].items.push({ tx: t, split: s }); }));
@@ -1616,21 +1748,26 @@ function People({ parties, setParties, transactions, setTransactions, setTab }) 
         {parties.length >= MAX_PARTIES && <p className="text-xs mt-2" style={{ color: BRAND.red }}>You've reached the 50-person limit.</p>}
       </Card>
       {parties.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {["All", ...RELATIONS].map((r) => {
-            const active = filterRelation === r;
-            const color = RELATION_COLOR[r];
-            return (
-              <button key={r} onClick={() => setFilterRelation(r)} className="px-3 py-1 rounded-full text-xs font-medium transition-colors border" style={active ? { backgroundColor: color || BRAND.plum, color: "#fff", borderColor: color || BRAND.plum } : { backgroundColor: "white", color: "#78716c", borderColor: "#e7e5e4" }}>
-                {r}
-              </button>
-            );
-          })}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {["All", ...RELATIONS].map((r) => {
+              const active = filterRelation === r;
+              const color = RELATION_COLOR[r];
+              return (
+                <button key={r} onClick={() => setFilterRelation(r)} className="px-3 py-1 rounded-full text-xs font-medium transition-colors border" style={active ? { backgroundColor: color || BRAND.plum, color: "#fff", borderColor: color || BRAND.plum } : { backgroundColor: "white", color: "#78716c", borderColor: "#e7e5e4" }}>
+                  {r}
+                </button>
+              );
+            })}
+          </div>
+          <button onClick={() => setSortBy((s) => s === "loan" ? "alpha" : "loan")} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors" style={{ backgroundColor: "white", color: BRAND.blue, borderColor: BRAND.blue }}>
+            <ArrowUpDown size={11} /> {sortBy === "loan" ? "Loan ↓" : "A–Z"}
+          </button>
         </div>
       )}
       {!parties.length ? <Empty icon={Users} title="No one added yet" body="Add family, friends, or colleagues here so you can split costs and track who still owes you." /> : (
         <div className="space-y-2">
-          {parties.filter((p) => filterRelation === "All" || p.relation === filterRelation).map((p) => { const t = totals[p.id] || { owed: 0, paid: 0, items: [] }; const open = openId === p.id; return (
+          {parties.filter((p) => filterRelation === "All" || p.relation === filterRelation).slice().sort((a, b) => sortBy === "loan" ? ((totals[b.id]?.owed || 0) - (totals[a.id]?.owed || 0)) : a.name.localeCompare(b.name)).map((p) => { const t = totals[p.id] || { owed: 0, paid: 0, items: [] }; const open = openId === p.id; return (
             <Card key={p.id} className="p-4">
               <button onClick={() => setOpenId(open ? null : p.id)} className="w-full flex items-center justify-between gap-3 text-left">
                 <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full bg-stone-100 flex items-center justify-center text-sm font-semibold text-stone-600 shrink-0">{p.name.slice(0, 1).toUpperCase()}</div><div className="min-w-0"><div className="font-medium text-stone-900 truncate">{p.name}</div><div className="text-xs text-stone-400">{p.phone || "—"}</div></div></div>
