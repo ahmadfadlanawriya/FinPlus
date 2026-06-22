@@ -230,8 +230,8 @@ function saveDrafts(d) { try { localStorage.setItem("drafts", JSON.stringify(d))
 /* ----------------------------- db mapping ----------------------------- */
 const toDbAccount = (a, uid) => ({ id: a.id, user_id: uid, name: a.name, bank: a.bank || null, type: a.type, color: a.color, balance: a.balance ?? null, currency: a.currency || "IDR", linked_account_id: a.linkedAccountId || null, holder: a.holder || null, number: a.number || null, credit_limit: a.creditLimit ?? null, balance_owed: a.balanceOwed ?? null, points: a.points ?? null });
 const fromDbAccount = (r) => ({ id: r.id, name: r.name, bank: r.bank, type: r.type, color: r.color, balance: r.balance, currency: r.currency, linkedAccountId: r.linked_account_id, holder: r.holder, number: r.number, creditLimit: r.credit_limit, balanceOwed: r.balance_owed, points: r.points });
-const toDbTx = (t, uid) => ({ id: t.id, user_id: uid, date: t.date, desc: t.desc, amount: t.amount, direction: t.direction, fx: t.fx || null, payer: t.payer || null, category: t.category || null, scope: t.scope || null, recurring: !!t.recurring, account_id: t.accountId || null, splits: t.splits || [], trip_country: t.tripCountry || null, not_travel: !!t.notTravel });
-const fromDbTx = (r) => ({ id: r.id, date: r.date, desc: r.desc, amount: r.amount, direction: r.direction, fx: r.fx || "", payer: r.payer || "", category: r.category || "", scope: r.scope || "", recurring: r.recurring, accountId: r.account_id, splits: r.splits || [], tripCountry: r.trip_country, notTravel: r.not_travel });
+const toDbTx = (t, uid) => ({ id: t.id, user_id: uid, date: t.date, desc: t.desc, amount: t.amount, direction: t.direction, fx: t.fx || null, payer: t.payer || null, category: t.category || null, scope: t.scope || null, recurring: !!t.recurring, account_id: t.accountId || null, splits: t.splits || [], trip_country: t.tripCountry || null, not_travel: !!t.notTravel, pinned_trip_key: t.pinnedTripKey || null });
+const fromDbTx = (r) => ({ id: r.id, date: r.date, desc: r.desc, amount: r.amount, direction: r.direction, fx: r.fx || "", payer: r.payer || "", category: r.category || "", scope: r.scope || "", recurring: r.recurring, accountId: r.account_id, splits: r.splits || [], tripCountry: r.trip_country, notTravel: r.not_travel, pinnedTripKey: r.pinned_trip_key || null });
 const toDbGoal = (g, uid) => ({ id: g.id, user_id: uid, kind: g.kind, name: g.name, category: g.category || null, limit: g.limit ?? null, target: g.target ?? null });
 const fromDbGoal = (r) => ({ id: r.id, kind: r.kind, name: r.name, category: r.category, limit: r.limit, target: r.target });
 const toDbSub = (s, uid) => ({ id: s.id, user_id: uid, key: s.key, plan: s.plan || null, name: s.name, category: s.category || null, scope: s.scope || null, monthly: s.monthly, status: s.status, cancelled_at: s.cancelledAt || null });
@@ -399,9 +399,10 @@ async function extractFromReceipt(file) {
   const obj = parseJSON(text);
   return (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
 }
-function flagDuplicates(enriched, existingTx) {
+function flagDuplicates(enriched, existingTx, acctId) {
+  const pool = acctId ? existingTx.filter((t) => t.accountId === acctId) : existingTx;
   return enriched.map((d) => {
-    const match = existingTx.find((t) => t.date === d.date && Math.abs(t.amount - d.amount) < 1);
+    const match = pool.find((t) => t.date === d.date && Math.abs(t.amount - d.amount) < 1);
     return match ? { ...d, _include: false, _potentialDuplicate: { id: match.id, desc: match.desc, date: match.date, amount: match.amount } } : d;
   });
 }
@@ -966,34 +967,50 @@ function Overview({ transactions, goals, month, setTab, scopes, scopeColor, defa
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-stone-500">{getGreeting()}, {displayName}</p>
-          <p className="text-2xl font-bold text-stone-900">{idr(totalDebitBalance + totalInvestmentBalance)}</p>
-          <p className="text-xs text-stone-400 mt-0.5">Savings + investments</p>
-          {totalInvestmentBalance > 0 && (
-            <div className="flex gap-3 mt-1">
-              <span className="text-xs text-stone-400">Savings: <span className="font-medium text-stone-600">{idr(totalDebitBalance)}</span></span>
-              <span className="text-xs text-stone-400">Invested: <span className="font-medium" style={{ color: BRAND.gold }}>{idr(totalInvestmentBalance)}</span></span>
-            </div>
-          )}
+      <div className="rounded-2xl p-4 md:p-5" style={{ background: `linear-gradient(135deg, ${BRAND.blue}, ${BRAND.blueDark})` }}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>{getGreeting()}, {displayName}</p>
+            <p className="text-2xl font-bold text-white mt-0.5">{idr(totalDebitBalance + totalInvestmentBalance)}</p>
+            <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.6)" }}>Savings + investments</p>
+            {totalInvestmentBalance > 0 && (
+              <div className="flex gap-3 mt-1">
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.6)" }}>Savings: <span className="font-medium text-white">{idr(totalDebitBalance)}</span></span>
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.6)" }}>Invested: <span className="font-medium text-white">{idr(totalInvestmentBalance)}</span></span>
+              </div>
+            )}
+          </div>
+          <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.15)" }}>
+            <UserCircle size={22} className="text-white" />
+          </div>
         </div>
-        <div className="w-11 h-11 rounded-full flex items-center justify-center" style={{ background: BRAND.blueTint }}>
-          <UserCircle size={22} style={{ color: BRAND.blue }} />
-        </div>
-      </div>
 
-      <div className="flex items-center justify-end gap-1">
-        <span className="text-xs text-stone-400">Spend:</span>
-        {[["total", "Total"], ["personal", "Personal"]].map(([v, l]) => (
-          <button key={v} onClick={() => setSpendView(v)} className="px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors" style={spendView === v ? { background: BRAND.blueTint, color: BRAND.blue } : { color: "#a8a29e" }}>{l}</button>
-        ))}
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Your spend" value={idr(spendView === "personal" ? personalSpent : spent)} accent={BRAND.red} sub={spendView === "total" && prevSpent ? `${delta >= 0 ? "+" : ""}${delta.toFixed(0)}% ${periodCompareLabel(periodMode)}` : null} subColor={delta > 0 ? BRAND.red : BRAND.success} />
-        <Stat label="Credits in" value={idr(income)} accent={BRAND.blue} />
-        <Stat label="Card payments" value={idr(payments)} accent={BRAND.slate} />
-        <Stat label="Transactions" value={inPeriodTx.length} accent={BRAND.plum} />
+        <div className="flex items-center justify-end gap-1 mb-3">
+          <span className="text-xs" style={{ color: "rgba(255,255,255,0.6)" }}>Spend:</span>
+          {[["total", "Total"], ["personal", "Personal"]].map(([v, l]) => (
+            <button key={v} onClick={() => setSpendView(v)} className="px-2.5 py-0.5 rounded-full text-[10px] font-medium transition-colors" style={spendView === v ? { background: "rgba(255,255,255,0.25)", color: "#fff" } : { color: "rgba(255,255,255,0.45)" }}>{l}</button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+          <div className="rounded-xl p-3" style={{ background: "rgba(0,0,0,0.18)" }}>
+            <div className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.6)" }}>Your spend</div>
+            <div className="text-base font-semibold text-white mt-1 leading-tight break-all">{idr(spendView === "personal" ? personalSpent : spent)}</div>
+            {spendView === "total" && prevSpent ? <div className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.55)" }}>{delta >= 0 ? "+" : ""}{delta.toFixed(0)}% {periodCompareLabel(periodMode)}</div> : null}
+          </div>
+          <div className="rounded-xl p-3" style={{ background: "rgba(0,0,0,0.18)" }}>
+            <div className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.6)" }}>Credits in</div>
+            <div className="text-base font-semibold text-white mt-1 leading-tight break-all">{idr(income)}</div>
+          </div>
+          <div className="rounded-xl p-3" style={{ background: "rgba(0,0,0,0.18)" }}>
+            <div className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.6)" }}>Card payments</div>
+            <div className="text-base font-semibold text-white mt-1 leading-tight break-all">{idr(payments)}</div>
+          </div>
+          <div className="rounded-xl p-3" style={{ background: "rgba(0,0,0,0.18)" }}>
+            <div className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.6)" }}>Transactions</div>
+            <div className="text-base font-semibold text-white mt-1 leading-tight break-all">{inPeriodTx.length}</div>
+          </div>
+        </div>
       </div>
 
       {netWorthHistory.length >= 2 && (
@@ -1163,10 +1180,13 @@ function SplitEditorRow({ t, parties, onChange, colSpan, setTab }) {
 }
 
 function Transactions({ transactions, setTransactions, accounts, setAccounts, month, dateRange, learn, scopes, scopeColor, defaultScope, parties, setTab }) {
-  const [q, setQ] = useState(""); const [fCat, setFCat] = useState(""); const [fScope, setFScope] = useState(""); const [fAcct, setFAcct] = useState(""); const [sel, setSel] = useState({}); const [splitOpen, setSplitOpen] = useState(null);
+  const [q, setQ] = useState(""); const [fCat, setFCat] = useState(""); const [fScope, setFScope] = useState(""); const [fAcct, setFAcct] = useState(""); const [fKind, setFKind] = useState(""); const [sel, setSel] = useState({}); const [splitOpen, setSplitOpen] = useState(null);
   const acctName = (id) => accounts.find((a) => a.id === id)?.name || "—";
   const acctColor = (id) => accounts.find((a) => a.id === id)?.color || "#78716c";
-  const rows = useMemo(() => transactions.filter((t) => dateRange ? (t.date >= dateRange.from && t.date <= dateRange.to) : monthKey(t.date) === month).filter((t) => !fCat || t.category === fCat).filter((t) => !fScope || t.scope === fScope).filter((t) => !fAcct || t.accountId === fAcct).filter((t) => !q || t.desc.toLowerCase().includes(q.toLowerCase())).sort((a, b) => b.date.localeCompare(a.date)), [transactions, month, dateRange, fCat, fScope, fAcct, q]);
+  const acctTypeMap = useMemo(() => { const m = {}; accounts.forEach((a) => (m[a.id] = a.type)); return m; }, [accounts]);
+  const kinds = useMemo(() => [...new Set(accounts.map((a) => a.type))].sort(), [accounts]);
+  const filteredAccounts = fKind ? accounts.filter((a) => a.type === fKind) : accounts;
+  const rows = useMemo(() => transactions.filter((t) => dateRange ? (t.date >= dateRange.from && t.date <= dateRange.to) : monthKey(t.date) === month).filter((t) => !fKind || acctTypeMap[t.accountId] === fKind).filter((t) => !fCat || t.category === fCat).filter((t) => !fScope || t.scope === fScope).filter((t) => !fAcct || t.accountId === fAcct).filter((t) => !q || t.desc.toLowerCase().includes(q.toLowerCase())).sort((a, b) => b.date.localeCompare(a.date)), [transactions, month, dateRange, fKind, fCat, fScope, fAcct, q, acctTypeMap]);
   const update = (id, patch) => setTransactions((prev) => prev.map((t) => { if (t.id !== id) return t; const next = { ...t, ...patch }; if (patch.category) learn(t.desc, patch.category, next.scope, next.recurring); if (patch.scope) learn(t.desc, next.category, patch.scope, next.recurring); return next; }));
   const updateSplits = (id, splits) => setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, splits } : t)));
   const del = (id) => { const t = transactions.find((x) => x.id === id); if (t) setAccounts((prev) => applyBalanceDelta(prev, t.accountId, -signedAmount(t))); setTransactions((prev) => prev.filter((x) => x.id !== id)); };
@@ -1179,7 +1199,8 @@ function Transactions({ transactions, setTransactions, accounts, setAccounts, mo
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px]"><Search size={15} className="absolute left-2.5 top-2.5 text-stone-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search merchant…" className={inputCls + " pl-8"} /></div>
-        <select value={fAcct} onChange={(e) => setFAcct(e.target.value)} className={inputCls + " w-auto"}><option value="">All accounts</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+        <select value={fKind} onChange={(e) => { setFKind(e.target.value); setFAcct(""); }} className={inputCls + " w-auto capitalize"}><option value="">All types</option>{kinds.map((k) => <option key={k} value={k}>{k}</option>)}</select>
+        <select value={fAcct} onChange={(e) => setFAcct(e.target.value)} className={inputCls + " w-auto"}><option value="">All accounts</option>{filteredAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
         <select value={fCat} onChange={(e) => setFCat(e.target.value)} className={inputCls + " w-auto"}><option value="">All categories</option>{CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}</select>
         <select value={fScope} onChange={(e) => setFScope(e.target.value)} className={inputCls + " w-auto capitalize"}><option value="">All profiles</option>{scopes.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select>
       </div>
@@ -1232,24 +1253,34 @@ function buildTrips(transactions, tripMeta) {
     if (t.tripCountry) { const e = Object.entries(CURRENCY).find(([, v]) => v.c === t.tripCountry); return e ? e[0] : "LOCAL#" + t.tripCountry; }
     const c = fxCode(t.fx) || inferFxFromDesc(t.desc); return c && CURRENCY[c] ? c : "LOCAL";
   };
+  // Separate pinned (manually assigned to a specific cluster) from unpinned
+  const pinned = items.filter((t) => t.pinnedTripKey);
+  const unpinned = items.filter((t) => !t.pinnedTripKey);
+  // Gap-detection clustering runs only on unpinned transactions
   const byCode = {};
-  items.forEach((t) => { const key = codeFor(t); (byCode[key] = byCode[key] || []).push(t); });
-  const clusters = [];
+  unpinned.forEach((t) => { const key = codeFor(t); (byCode[key] = byCode[key] || []).push(t); });
+  const rawClusters = []; // each has { code, items, anchorDate }
   Object.entries(byCode).forEach(([code, list]) => {
     list.sort((a, b) => a.date.localeCompare(b.date));
     let cluster = []; let prevDate = null;
-    const flush = () => { if (cluster.length) { clusters.push({ code, items: cluster.slice() }); cluster = []; } };
+    const flush = () => { if (cluster.length) { rawClusters.push({ code, items: cluster.slice(), anchorDate: cluster[0].date }); cluster = []; } };
     list.forEach((t) => { if (prevDate && (new Date(t.date) - new Date(prevDate)) / 86400000 > TRIP_GAP_DAYS) flush(); cluster.push(t); prevDate = t.date; });
     flush();
   });
-  return clusters.map((cl) => {
+  // Place pinned transactions into their target cluster; fall back to solo cluster if target gone
+  pinned.forEach((t) => {
+    const target = rawClusters.find((cl) => (cl.code + "#" + cl.anchorDate) === t.pinnedTripKey);
+    if (target) { target.items.push(t); }
+    else { rawClusters.push({ code: codeFor(t), items: [t], anchorDate: t.date }); }
+  });
+  return rawClusters.map((cl) => {
     const isCustomLocal = cl.code.startsWith("LOCAL#");
     const known = !cl.code.startsWith("LOCAL") && CURRENCY[cl.code];
     const total = cl.items.reduce((a, t) => a + t.amount, 0);
     const net = cl.items.reduce((a, t) => a + netOf(t), 0);
     const cats = {}; cl.items.forEach((t) => (cats[t.category || "Other"] = (cats[t.category || "Other"] || 0) + t.amount));
     const dates = cl.items.map((t) => t.date).sort();
-    const key = cl.code + "#" + dates[0];
+    const key = cl.code + "#" + cl.anchorDate; // stable key: uses first unpinned date
     const label = known ? CURRENCY[cl.code].c : isCustomLocal ? cl.code.slice(6) : "Trip / bookings";
     return { key, code: known ? cl.code : "LOCAL", label, flag: known ? CURRENCY[cl.code].flag : "\u{1F9F3}", items: cl.items, total, net, cats, start: dates[0], end: dates[dates.length - 1], purpose: (tripMeta[key] || {}).purpose || "" };
   }).sort((a, b) => b.start.localeCompare(a.start));
@@ -1412,15 +1443,15 @@ function Travel({ transactions, setTransactions, accounts, scopes, scopeColor, t
   };
   // move an existing transaction into this trip: tag Travel + stamp its country so it groups here
   const assignExisting = (trip, t) => {
-    setTransactions((prev) => prev.map((x) => (x.id === t.id ? { ...x, category: "Travel", fx: x.fx || (trip.code && trip.code !== "LOCAL" ? `${trip.code} 0.00` : x.fx), tripCountry: trip.label, notTravel: false } : x)));
+    setTransactions((prev) => prev.map((x) => (x.id === t.id ? { ...x, category: "Travel", fx: x.fx || (trip.code && trip.code !== "LOCAL" ? `${trip.code} 0.00` : x.fx), tripCountry: trip.label, notTravel: false, pinnedTripKey: trip.key } : x)));
   };
   // pull a transaction out of every trip permanently (e.g. billing-entity location ≠ where you actually spent it)
   const removeItem = (t) => {
-    setTransactions((prev) => prev.map((x) => (x.id === t.id ? { ...x, notTravel: true, tripCountry: undefined } : x)));
+    setTransactions((prev) => prev.map((x) => (x.id === t.id ? { ...x, notTravel: true, tripCountry: undefined, pinnedTripKey: null } : x)));
   };
   // move a transaction from its current trip into a different one
   const moveItem = (t, targetTrip) => {
-    setTransactions((prev) => prev.map((x) => (x.id === t.id ? { ...x, notTravel: false, category: "Travel", tripCountry: targetTrip.label, fx: targetTrip.code && targetTrip.code !== "LOCAL" ? `${targetTrip.code} 0.00` : x.fx } : x)));
+    setTransactions((prev) => prev.map((x) => (x.id === t.id ? { ...x, notTravel: false, category: "Travel", tripCountry: targetTrip.label, fx: targetTrip.code && targetTrip.code !== "LOCAL" ? `${targetTrip.code} 0.00` : x.fx, pinnedTripKey: targetTrip.key } : x)));
   };
   // candidates = expenses not already considered travel
   const candidates = useMemo(() => transactions.filter((t) => t.direction === "expense" && !looksLikeTravel(t)).sort((a, b) => b.date.localeCompare(a.date)), [transactions]);
@@ -1652,10 +1683,12 @@ function People({ parties, setParties, transactions, setTransactions, setTab }) 
 
 /* ----------------------------- IMPORT ----------------------------- */
 function Importer({ accounts, setAccounts, transactions, setTransactions, setSubscriptions, recall, learn, matchSub, setTab, scopes, scopeColor, defaultScope, drafts, setDrafts, importHistory = [], onImported }) {
-  const [mode, setMode] = useState("file"); const [acctId, setAcctId] = useState(accounts[0]?.id || ""); const [busy, setBusy] = useState(""); const [err, setErr] = useState("");
+  const [mode, setMode] = useState("file"); const [acctId, setAcctId] = useState(accounts[0]?.id || ""); const [acctKind, setAcctKind] = useState(accounts[0]?.type || ""); const [busy, setBusy] = useState(""); const [err, setErr] = useState("");
   const [pendingFile, setPendingFile] = useState(null); // { name, hash, size } — set after hash computed, used at save time
   const [dupWarning, setDupWarning] = useState(null); // existing import_history record + file reference
-  useEffect(() => { if (!acctId && accounts[0]) setAcctId(accounts[0].id); }, [accounts]); // eslint-disable-line
+  const importKinds = [...new Set(accounts.map((a) => a.type))].sort();
+  const importAccounts = acctKind ? accounts.filter((a) => a.type === acctKind) : accounts;
+  useEffect(() => { if (!acctId && accounts[0]) { setAcctId(accounts[0].id); setAcctKind(accounts[0].type); } }, [accounts]); // eslint-disable-line
   const selectedAccount = accounts.find((a) => a.id === acctId);
   const enrichItems = (items) => items.map((d) => {
     const amount = Math.abs(Number(d.amount) || 0);
@@ -1668,7 +1701,7 @@ function Importer({ accounts, setAccounts, transactions, setTransactions, setSub
     const defaultCat = isPay ? "Card Payment" : direction === "income" ? incomeCat : direction === "transfer" ? "Transfers" : (sub ? sub.category : (mem?.category || en?.category || ""));
     return { id: uid(), date: d.date, desc: d.desc || "Unknown", amount, direction, fx: d.fx || "", payer: d.payer || "", category: defaultCat, scope: sub ? sub.scope : (mem?.scope || en?.scope || defaultScope), recurring: sub ? true : !!(mem?.recurring || en?.recurring), accountId: acctId, splits: [], _include: true, _reappeared: !!(sub && sub.status === "cancelled") };
   }).filter((x) => x.amount > 0);
-  const proceedWithExtract = async (file, hash) => { setBusy("Reading your statement…"); try { const raw = await extractFromFile(file); if (!raw.length) { setErr("No transactions found. Try a clearer file, or paste the rows as CSV."); setBusy(""); return; } const dated = raw.map((r) => ({ ...r, date: parseIndoDate(r.date) })); setDrafts(flagDuplicates(enrichItems(dated), transactions)); setPendingFile({ name: file.name, hash, size: file.size }); setBusy(""); } catch (e2) { setErr(e2.message); setBusy(""); } };
+  const proceedWithExtract = async (file, hash) => { setBusy("Reading your statement…"); try { const raw = await extractFromFile(file); if (!raw.length) { setErr("No transactions found. Try a clearer file, or paste the rows as CSV."); setBusy(""); return; } const dated = raw.map((r) => ({ ...r, date: parseIndoDate(r.date) })); setDrafts(flagDuplicates(enrichItems(dated), transactions, acctId)); setPendingFile({ name: file.name, hash, size: file.size }); setBusy(""); } catch (e2) { setErr(e2.message); setBusy(""); } };
   const onFile = async (e) => { const file = e.target.files?.[0]; if (!file) return; setErr(""); setBusy("Checking file…"); e.target.value = ""; const hash = await hashFile(file); const existing = importHistory.find((r) => r.fileHash === hash); if (existing) { setDupWarning({ ...existing, _file: file, _hash: hash }); setBusy(""); return; } await proceedWithExtract(file, hash); };
   const onCSV = (text) => { setErr(""); const lines = text.trim().split(/\r?\n/).filter(Boolean); if (!lines.length) return; const hasHeader = /date|amount|desc|tanggal|jumlah|keterangan/.test(lines[0].toLowerCase()); const body = hasHeader ? lines.slice(1) : lines; const items = body.map((line) => { const cols = splitCSV(line); const amt = parseFloat((cols[2] ?? cols[cols.length - 1] ?? "0").toString().replace(/[^\d.-]/g, "")) || 0; return { date: normDate((cols[0] || "").trim()), desc: (cols[1] || cols[0] || "").trim(), amount: Math.abs(amt), kind: "purchase" }; }).filter((i) => i.amount > 0); if (!items.length) { setErr("Couldn't read any rows. Expected: date, description, amount."); return; } setDrafts(enrichItems(items)); };
   const autoTag = async () => { const need = drafts.map((d, i) => ({ i, d })).filter((x) => !x.d.category && x.d.direction === "expense"); if (!need.length) return; setBusy("Tagging categories…"); setErr(""); try { const cats = await aiCategorize(need.map((x) => x.d.desc)); setDrafts((prev) => { const next = [...prev]; need.forEach((x, k) => { if (cats[k] && CATEGORIES.includes(cats[k])) next[x.i] = { ...next[x.i], category: cats[k] }; }); return next; }); } catch (e) { setErr(e.message); } finally { setBusy(""); } };
@@ -1690,10 +1723,17 @@ function Importer({ accounts, setAccounts, transactions, setTransactions, setSub
       {!drafts.length ? (
         <>
           <Card className="p-4"><div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[180px]"><Field label="Import into account">
-              <select value={acctId} onChange={(e) => setAcctId(e.target.value)} className={inputCls}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
-              {selectedAccount && <div className="text-xs text-stone-400 mt-1">{selectedAccount.bank ? selectedAccount.bank + " · " : ""}<span className="capitalize">{selectedAccount.type}</span></div>}
-            </Field></div>
+            <div className="flex gap-2 flex-wrap flex-1">
+              <div className="min-w-[130px]"><Field label="Account type">
+                <select value={acctKind} onChange={(e) => { setAcctKind(e.target.value); setAcctId(accounts.find((a) => a.type === e.target.value)?.id || ""); }} className={inputCls + " capitalize"}>
+                  {importKinds.map((k) => <option key={k} value={k}>{k}</option>)}
+                </select>
+              </Field></div>
+              <div className="min-w-[180px] flex-1"><Field label="Account name">
+                <select value={acctId} onChange={(e) => setAcctId(e.target.value)} className={inputCls}>{importAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+                {selectedAccount && <div className="text-xs text-stone-400 mt-1">{selectedAccount.bank || ""}</div>}
+              </Field></div>
+            </div>
             <div className="flex gap-1 bg-stone-100 rounded-lg p-1">{[["file", "Upload file", FileText], ["csv", "Paste CSV", ListOrdered], ["manual", "Add one", Plus]].map(([m, label, Icon]) => <button key={m} onClick={() => setMode(m)} className={"flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium " + (mode === m ? "bg-white text-stone-900 shadow-sm" : "text-stone-500")}><Icon size={14} /> {label}</button>)}</div>
           </div></Card>
           {mode === "file" && <Card className="p-6 text-center border-dashed"><input id="file" type="file" accept="application/pdf,image/*" onChange={onFile} className="hidden" /><label htmlFor="file" className="cursor-pointer inline-flex flex-col items-center gap-2"><div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: BRAND.blueTint }}>{busy ? <Loader2 size={22} className="animate-spin" style={{ color: BRAND.blue }} /> : <Upload size={22} style={{ color: BRAND.blue }} />}</div><span className="text-sm font-medium text-stone-800">{busy || "Upload a card or bank statement"}</span><span className="text-xs text-stone-400">PDF or photo · detects expenses vs. money-in automatically</span></label><p className="text-[11px] text-stone-400 mt-4 max-w-md mx-auto">The file is sent to Claude to extract the rows. For anything you'd rather keep on-device, use Paste CSV or Add one.</p></Card>}
@@ -1789,8 +1829,11 @@ function Setup({ accounts, setAccounts, transactions, scopes, setScopes, setTab,
   };
   const del = (id) => { setAccounts((prev) => prev.filter((a) => a.id !== id)); setDeleteConfirm(null); }; const count = (id) => transactions.filter((t) => t.accountId === id).length;
   const openDetail = (id) => { setFocusAccount(id); setTab("accountsDetail"); };
-  const [q, setQ] = useState(""); const [ft, setFt] = useState("");
-  const filtered = accounts.filter((a) => (!ft || a.type === ft) && (!q || (a.name + " " + (a.bank || "")).toLowerCase().includes(q.toLowerCase())));
+  const [q, setQ] = useState("");
+  const filtered = accounts.filter((a) => (!q || (a.name + " " + (a.bank || "")).toLowerCase().includes(q.toLowerCase())));
+  const [openTypes, setOpenTypes] = useState(() => new Set(ACCOUNT_TYPES));
+  const toggleType = (t) => setOpenTypes((prev) => { const s = new Set(prev); s.has(t) ? s.delete(t) : s.add(t); return s; });
+  const groupedByType = [...ACCOUNT_TYPES, "investment"].map((type) => ({ type, items: filtered.filter((a) => a.type === type) })).filter((g) => g.items.length > 0);
   const [ns, setNs] = useState("");
   const addScope = () => { const name = ns.trim().toLowerCase(); if (!name || scopes.some((s) => s.name === name)) return; setScopes((prev) => [...prev, { name, color: SWATCHES[prev.length % SWATCHES.length] }]); setNs(""); };
   const renameScope = (i, name) => setScopes((prev) => prev.map((s, idx) => (idx === i ? { ...s, name: name.toLowerCase() } : s)));
@@ -1801,14 +1844,16 @@ function Setup({ accounts, setAccounts, transactions, scopes, setScopes, setTab,
       <div className="flex items-center gap-3">
         <button onClick={() => setTab("accountsDetail")} className="flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-800"><ChevronRight size={15} className="rotate-180" /> Back to My Accounts</button>
       </div>
-      <div className="grid md:grid-cols-3 gap-4">
-        <Card className="p-4 h-fit">
+      <div className="flex gap-4 flex-col lg:flex-row">
+        <Card className="p-4 h-fit lg:w-72 shrink-0">
           <h3 className="text-sm font-semibold text-stone-800 mb-3">Add account</h3>
           <div className="space-y-3">
             <Field label="Name"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="UOB PRIVIMILES" className={inputCls} /></Field>
             <Field label="Bank / issuer"><input value={f.bank} onChange={(e) => setF({ ...f, bank: e.target.value })} placeholder="UOB, BCA, GoPay…" className={inputCls} /></Field>
-            <Field label="Type"><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })} className={inputCls + " capitalize"}>{ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></Field>
-            <Field label="Currency"><select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })} className={inputCls}>{CURRENCY_LIST.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Type"><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })} className={inputCls + " capitalize"}>{ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></Field>
+              <Field label="Currency"><select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })} className={inputCls}>{CURRENCY_LIST.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+            </div>
             {f.type === "debit" && (
               <Field label="Starting balance"><input value={f.balance} onChange={(e) => setF({ ...f, balance: e.target.value })} placeholder="5000000" className={inputCls + " num"} /></Field>
             )}
@@ -1824,27 +1869,34 @@ function Setup({ accounts, setAccounts, transactions, scopes, setScopes, setTab,
             <p className="text-[11px] text-stone-400">Add bank/card details (account number, holder, points) on the <button onClick={() => setTab("accountsDetail")} className="underline" style={{ color: BRAND.blue }}>My Accounts</button> page.</p>
           </div>
         </Card>
-        <div className="md:col-span-2 space-y-3">
+        <div className="flex-1 min-w-0 space-y-2">
           <Card className="p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 min-w-[160px]"><Search size={15} className="absolute left-2.5 top-2.5 text-stone-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search accounts…" className={inputCls + " pl-8"} /></div>
-              <select value={ft} onChange={(e) => setFt(e.target.value)} className={inputCls + " w-auto capitalize"}><option value="">All types</option>{ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select>
-            </div>
+            <div className="relative"><Search size={15} className="absolute left-2.5 top-2.5 text-stone-400" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search accounts…" className={inputCls + " pl-8"} /></div>
           </Card>
           {!accounts.length && <Empty icon={CreditCard} title="No accounts yet" body="Add your cards, bank accounts, and e-wallets here." />}
           {accounts.length > 0 && !filtered.length && <Muted>No accounts match your search.</Muted>}
-          {filtered.map((a) => (
-            <Card key={a.id} className="p-4 flex items-center justify-between gap-3">
-              <button onClick={() => openDetail(a.id)} className="flex items-center gap-3 text-left flex-1 min-w-0">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: a.color + "1a" }}>{a.type === "cash" ? <Banknote size={18} style={{ color: a.color }} /> : <CreditCard size={18} style={{ color: a.color }} />}</div>
-                <div className="min-w-0"><div className="font-medium text-stone-900 truncate">{a.name}</div><div className="text-xs text-stone-400">{a.bank || "—"} · {count(a.id)} transactions</div></div>
+          {groupedByType.map(({ type, items }) => (
+            <div key={type}>
+              <button onClick={() => toggleType(type)} className="w-full flex items-center justify-between px-1 py-2 hover:opacity-70">
+                <span className="text-xs font-semibold uppercase tracking-wide text-stone-500 capitalize">{type} <span className="font-normal text-stone-400">({items.length})</span></span>
+                <ChevronRight size={14} className={"text-stone-400 transition-transform " + (openTypes.has(type) ? "rotate-90" : "")} />
               </button>
-              <div className="flex items-center gap-2 shrink-0">
-                <Pill color={a.color}><span className="capitalize">{a.type}</span></Pill>
-                <Btn variant="outline" onClick={() => openDetail(a.id)} className="text-xs py-1.5">Details <ChevronRight size={13} /></Btn>
-                <Btn variant="danger" onClick={() => setDeleteConfirm({ id: a.id, name: a.name })}><Trash2 size={15} /></Btn>
-              </div>
-            </Card>
+              {openTypes.has(type) && items.map((a) => (
+                <Card key={a.id} className="mb-2 p-3 flex items-center gap-3">
+                  <button onClick={() => openDetail(a.id)} className="flex items-center gap-2.5 text-left flex-1 min-w-0">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: a.color + "1a" }}>{a.type === "cash" ? <Banknote size={16} style={{ color: a.color }} /> : <CreditCard size={16} style={{ color: a.color }} />}</div>
+                    <div className="min-w-0">
+                      <div className="font-medium text-stone-900 text-sm truncate">{a.name}</div>
+                      <div className="text-xs text-stone-400 truncate">{a.bank || "—"} · {count(a.id)} tx</div>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Btn variant="outline" onClick={() => openDetail(a.id)} className="text-xs py-1 px-2 hidden sm:flex">Details</Btn>
+                    <Btn variant="danger" onClick={() => setDeleteConfirm({ id: a.id, name: a.name })} className="py-1 px-2"><Trash2 size={14} /></Btn>
+                  </div>
+                </Card>
+              ))}
+            </div>
           ))}
         </div>
       </div>
@@ -1916,11 +1968,15 @@ function AccountsDetail({ accounts, setAccounts, transactions, setTab, focusAcco
   };
   const toIdr = (amount, currency) => { if (!currency || currency === "IDR") return amount; const rate = fxRates[currency]; return rate ? amount * rate : null; };
 
-  const credit = accounts.filter((a) => a.type === "credit");
-  const debit = accounts.filter((a) => a.type === "debit");
-  const investment = accounts.filter((a) => a.type === "investment");
+  const [acctSearch, setAcctSearch] = useState("");
+  const matchSearch = (a) => !acctSearch || (a.name + " " + (a.bank || "")).toLowerCase().includes(acctSearch.toLowerCase());
+  const credit = accounts.filter((a) => a.type === "credit" && matchSearch(a)).sort((a, b) => (b.creditLimit || 0) - (a.creditLimit || 0));
+  const debit = accounts.filter((a) => a.type === "debit" && matchSearch(a)).sort((a, b) => (b.balance || 0) - (a.balance || 0));
+  const investment = accounts.filter((a) => a.type === "investment" && matchSearch(a)).sort((a, b) => ((Number(b.creditLimit) || 0) * (Number(b.balanceOwed) || 0)) - ((Number(a.creditLimit) || 0) * (Number(a.balanceOwed) || 0)));
   const list = view === "credit" ? credit : view === "debit" ? debit : [];
   const balanceOf = (id) => transactions.filter((t) => t.accountId === id);
+  // Debit grouped by bank name
+  const debitByBank = debit.reduce((acc, a) => { const k = a.bank || "Other"; (acc[k] = acc[k] || []).push(a); return acc; }, {});
 
   const totalDebitIdr = debit.reduce((sum, a) => { const v = toIdr(a.balance || 0, a.currency || "IDR"); return v != null ? sum + v : sum; }, 0);
   const totalInvestmentIdr = investment.reduce((sum, a) => { const v = toIdr(Number(a.balance) || 0, a.currency || "IDR"); return sum + (v != null ? v : (Number(a.balance) || 0)); }, 0);
@@ -1939,6 +1995,7 @@ function AccountsDetail({ accounts, setAccounts, transactions, setTab, focusAcco
 
   return (
     <div className="space-y-4">
+      <div className="relative"><Search size={15} className="absolute left-2.5 top-2.5 text-stone-400" /><input value={acctSearch} onChange={(e) => setAcctSearch(e.target.value)} placeholder="Search accounts…" className={inputCls + " pl-8"} /></div>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         {Tabs}
         {view !== "investment" && <Btn variant="outline" onClick={() => setTab("accounts")}><CreditCard size={15} /> Manage Accounts</Btn>}
@@ -2070,56 +2127,80 @@ function AccountsDetail({ accounts, setAccounts, transactions, setTab, focusAcco
         />
       )}
       {view !== "investment" && !list.length && <Empty icon={Landmark} title={`No ${view} accounts`} body={`Use "Manage Accounts" above to add your first ${view} account.`} action={<Btn onClick={() => setTab("accounts")}><Plus size={15} /> Manage Accounts</Btn>} />}
-      {view !== "investment" && <div className="grid md:grid-cols-2 gap-4">
-        {list.map((a) => {
-          const txs = balanceOf(a.id);
-          const currency = a.currency || "IDR";
-          const idrEquiv = currency !== "IDR" ? toIdr(a.balance || 0, currency) : null;
-          return (
-            <Card key={a.id} className="p-0 overflow-hidden" >
-              <div className="px-4 py-3 flex items-center justify-between" style={{ background: a.color, color: "#fff" }}>
-                <div className="flex items-center gap-2"><CreditCard size={18} /><span className="font-semibold truncate">{a.name}</span></div>
-                <div className="flex items-center gap-2">
-                  {currency !== "IDR" && <span className="text-xs font-medium bg-white/20 rounded px-1.5 py-0.5">{currency}</span>}
-                  <span className="text-xs uppercase tracking-wide opacity-80">{a.type}</span>
-                </div>
+
+      {/* Credit — flat sorted grid */}
+      {view === "credit" && credit.length > 0 && (
+        <div className="grid md:grid-cols-2 gap-4">
+          {credit.map((a) => renderAccountCard(a))}
+        </div>
+      )}
+
+      {/* Debit — grouped by bank */}
+      {view === "debit" && debit.length > 0 && (
+        <div className="space-y-5">
+          {Object.entries(debitByBank).sort(([a], [b]) => a.localeCompare(b)).map(([bank, bankAccounts]) => (
+            <div key={bank}>
+              <div className="flex items-center gap-2 mb-2 px-1">
+                <Landmark size={13} className="text-stone-400 shrink-0" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">{bank}</span>
+                <span className="text-xs text-stone-400">({bankAccounts.length})</span>
               </div>
-              <div className="p-4 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Bank name"><input value={a.bank || ""} onChange={(e) => update(a.id, { bank: e.target.value })} placeholder="UOB" className={inputCls} /></Field>
-                  <Field label="Account holder"><input value={a.holder || ""} onChange={(e) => update(a.id, { holder: e.target.value })} placeholder="Full name" className={inputCls} /></Field>
-                  <Field label="Account number"><input value={a.number || ""} onChange={(e) => update(a.id, { number: e.target.value.replace(/[^\d]/g, "") })} inputMode="numeric" placeholder="1234567890" className={inputCls + " num"} /></Field>
-                  <Field label="Currency"><select value={currency} onChange={(e) => update(a.id, { currency: e.target.value })} className={inputCls}>{CURRENCY_LIST.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
-                </div>
-                {view === "debit" ? (
-                  <Field label={`Balance (${currency})`}><input value={a.balance ?? 0} onChange={(e) => update(a.id, { balance: intField(e.target.value) })} className={inputCls + " num"} /></Field>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Credit limit"><input value={a.creditLimit ?? 0} onChange={(e) => update(a.id, { creditLimit: intField(e.target.value) })} className={inputCls + " num"} /></Field>
-                    <Field label="Current balance owed"><input value={a.balanceOwed ?? 0} onChange={(e) => update(a.id, { balanceOwed: intField(e.target.value) })} className={inputCls + " num"} /></Field>
-                    <Field label="Card points"><input value={a.points ?? 0} onChange={(e) => update(a.id, { points: intField(e.target.value) })} className={inputCls + " num"} /></Field>
-                    <div className="flex items-end"><div className="text-xs text-stone-400">Available: <Num className="font-medium text-stone-700">{fmtMoney((a.creditLimit || 0) - (a.balanceOwed || 0), currency)}</Num></div></div>
-                  </div>
-                )}
-                <div className="flex items-center justify-between pt-1 border-t border-stone-100">
-                  <span className="text-xs text-stone-400">{txs.length} transactions</span>
-                  {view === "debit" ? (
-                    <div className="text-right">
-                      <div className="text-sm">Savings: <Num className="font-semibold" style={{ color: BRAND.blue }}>{fmtMoney(a.balance || 0, currency)}</Num></div>
-                      {idrEquiv != null && <div className="text-xs text-stone-400">≈ <Num>{idr(idrEquiv)}</Num></div>}
-                    </div>
-                  ) : (
-                    <span className="text-sm">Points: <Num className="font-semibold" style={{ color: BRAND.gold }}>{(a.points || 0).toLocaleString("id-ID")}</Num></span>
-                  )}
-                </div>
-                {view === "debit" && renderBalanceHistory(a.id)}
+              <div className="grid md:grid-cols-2 gap-4">
+                {bankAccounts.map((a) => renderAccountCard(a))}
               </div>
-            </Card>
-          );
-        })}
-      </div>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
+
+  function renderAccountCard(a) {
+    const txs = balanceOf(a.id);
+    const currency = a.currency || "IDR";
+    const idrEquiv = currency !== "IDR" ? toIdr(a.balance || 0, currency) : null;
+    return (
+      <Card key={a.id} className="p-0 overflow-hidden">
+        <div className="px-4 py-3 flex items-center justify-between" style={{ background: a.color, color: "#fff" }}>
+          <div className="flex items-center gap-2"><CreditCard size={18} /><span className="font-semibold truncate">{a.name}</span></div>
+          <div className="flex items-center gap-2">
+            {currency !== "IDR" && <span className="text-xs font-medium bg-white/20 rounded px-1.5 py-0.5">{currency}</span>}
+            <span className="text-xs uppercase tracking-wide opacity-80">{a.type}</span>
+          </div>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Bank name"><input value={a.bank || ""} onChange={(e) => update(a.id, { bank: e.target.value })} placeholder="UOB" className={inputCls} /></Field>
+            <Field label="Account holder"><input value={a.holder || ""} onChange={(e) => update(a.id, { holder: e.target.value })} placeholder="Full name" className={inputCls} /></Field>
+            <Field label="Account number"><input value={a.number || ""} onChange={(e) => update(a.id, { number: e.target.value.replace(/[^\d]/g, "") })} inputMode="numeric" placeholder="1234567890" className={inputCls + " num"} /></Field>
+            <Field label="Currency"><select value={currency} onChange={(e) => update(a.id, { currency: e.target.value })} className={inputCls}>{CURRENCY_LIST.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
+          </div>
+          {view === "debit" ? (
+            <Field label={`Balance (${currency})`}><input value={a.balance ?? 0} onChange={(e) => update(a.id, { balance: intField(e.target.value) })} className={inputCls + " num"} /></Field>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Credit limit"><input value={a.creditLimit ?? 0} onChange={(e) => update(a.id, { creditLimit: intField(e.target.value) })} className={inputCls + " num"} /></Field>
+              <Field label="Current balance owed"><input value={a.balanceOwed ?? 0} onChange={(e) => update(a.id, { balanceOwed: intField(e.target.value) })} className={inputCls + " num"} /></Field>
+              <Field label="Card points"><input value={a.points ?? 0} onChange={(e) => update(a.id, { points: intField(e.target.value) })} className={inputCls + " num"} /></Field>
+              <div className="flex items-end"><div className="text-xs text-stone-400">Available: <Num className="font-medium text-stone-700">{fmtMoney((a.creditLimit || 0) - (a.balanceOwed || 0), currency)}</Num></div></div>
+            </div>
+          )}
+          <div className="flex items-center justify-between pt-1 border-t border-stone-100">
+            <span className="text-xs text-stone-400">{txs.length} transactions</span>
+            {view === "debit" ? (
+              <div className="text-right">
+                <div className="text-sm">Savings: <Num className="font-semibold" style={{ color: BRAND.blue }}>{fmtMoney(a.balance || 0, currency)}</Num></div>
+                {idrEquiv != null && <div className="text-xs text-stone-400">≈ <Num>{idr(idrEquiv)}</Num></div>}
+              </div>
+            ) : (
+              <span className="text-sm">Points: <Num className="font-semibold" style={{ color: BRAND.gold }}>{(a.points || 0).toLocaleString("id-ID")}</Num></span>
+            )}
+          </div>
+          {view === "debit" && renderBalanceHistory(a.id)}
+        </div>
+      </Card>
+    );
+  }
 }
 
 /* ----------------------------- GOALS ----------------------------- */
