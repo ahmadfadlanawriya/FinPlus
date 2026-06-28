@@ -1497,14 +1497,7 @@ function TripCard({ trip, otherTrips, scopes, scopeColor, banner, tripName, onSe
         </div>
       )}
       {open && (
-      <><div className="flex flex-wrap items-center gap-2 mt-3">
-        <span className="text-xs text-stone-400">Trip with:</span>
-        <select value={trip.purpose} onChange={(e) => onSetPurpose(trip.key, e.target.value)} style={{ color: trip.purpose ? scopeColor(trip.purpose) : BRAND.goldDark }} className={(trip.purpose ? "border-stone-200" : "fp-border-warn fp-bg-warn-tint-static") + " border rounded-lg px-2 py-1 text-sm capitalize focus:outline-none fp-input"}>
-          <option value="">tag purpose…</option>{scopes.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-        </select>
-        {trip.purpose && <Btn variant="ghost" onClick={() => onApply(trip)} className="text-xs py-1">Apply to these transactions</Btn>}
-      </div>
-      <div className="flex flex-wrap gap-1.5 mt-3">{cats.map(([c, v]) => <Pill key={c} color={PALETTE[CATEGORIES.indexOf(c) % PALETTE.length]}>{c} · {idr(v)}</Pill>)}</div>
+      <><div className="flex flex-wrap gap-1.5 mt-3">{cats.map(([c, v]) => <Pill key={c} color={PALETTE[CATEGORIES.indexOf(c) % PALETTE.length]}>{c} · {idr(v)}</Pill>)}</div>
 
       <div className="flex flex-wrap gap-2 mt-3">
         <Btn variant="outline" onClick={() => { setAdding(!adding); setPicking(false); }} className="text-xs py-1.5"><Plus size={13} /> Add expense</Btn>
@@ -2504,6 +2497,9 @@ function ProfileRow({ label, value, mono = false }) {
 function AboutMe({ user }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editingName, setEditingName] = useState(false);
+  const [nameVal, setNameVal] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   useEffect(() => {
     supabase.from("profiles").select("*").eq("id", user.id).maybeSingle()
@@ -2516,7 +2512,20 @@ function AboutMe({ user }) {
     : "—";
   const providers = user.app_metadata?.providers?.join(", ") || user.app_metadata?.provider || "email";
 
+  const startEdit = () => { setNameVal(profile?.display_name || ""); setEditingName(true); };
+  const cancelEdit = () => setEditingName(false);
+  const saveName = async () => {
+    const trimmed = nameVal.trim();
+    setSavingName(true);
+    await supabase.from("profiles").update({ display_name: trimmed || null }).eq("id", user.id);
+    setProfile((p) => ({ ...p, display_name: trimmed || null }));
+    setEditingName(false);
+    setSavingName(false);
+  };
+
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin" style={{ color: BRAND.blue }} /></div>;
+
+  const displayName = profile?.display_name || user.email?.split("@")[0] || "—";
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
@@ -2526,7 +2535,7 @@ function AboutMe({ user }) {
             {initial}
           </div>
           <div className="min-w-0">
-            <div className="text-lg font-semibold text-stone-900 truncate">{profile?.display_name || user.email?.split("@")[0] || "—"}</div>
+            <div className="text-lg font-semibold text-stone-900 truncate">{displayName}</div>
             <div className="text-sm text-stone-500 truncate">{user.email}</div>
             <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: BRAND.blueTint, color: BRAND.blueDark }}>
               {profile?.role || "member"}
@@ -2537,7 +2546,30 @@ function AboutMe({ user }) {
 
       <Card className="p-6 divide-y divide-stone-100">
         <ProfileRow label="Email" value={user.email} />
-        <ProfileRow label="Display name" value={profile?.display_name} />
+        <div className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0">
+          <span className="text-sm text-stone-500 shrink-0 w-32">Display name</span>
+          {editingName ? (
+            <div className="flex items-center gap-2 flex-1 justify-end">
+              <input
+                autoFocus
+                value={nameVal}
+                onChange={(e) => setNameVal(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") saveName(); if (e.key === "Escape") cancelEdit(); }}
+                placeholder="Your name"
+                className="border border-stone-200 rounded-lg px-3 py-1.5 text-sm text-stone-800 focus:outline-none focus:ring-2 fp-input w-44"
+              />
+              <button onClick={saveName} disabled={savingName} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: BRAND.blue }}>
+                {savingName ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              </button>
+              <button onClick={cancelEdit} className="px-2 py-1.5 rounded-lg text-xs text-stone-400 hover:text-stone-600"><X size={13} /></button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-stone-800">{profile?.display_name || <span className="text-stone-400 font-normal">—</span>}</span>
+              <button onClick={startEdit} className="text-stone-400 hover:text-stone-600 transition-colors"><Pencil size={13} /></button>
+            </div>
+          )}
+        </div>
         <ProfileRow label="Role" value={profile?.role} />
         <ProfileRow label="Sign-in method" value={providers} />
         <ProfileRow label="Member since" value={joinedDate} />
