@@ -8,6 +8,7 @@ import {
   Wallet, LayoutDashboard, ListOrdered, Upload, CreditCard, Target,
   Plus, Trash2, Sparkles, AlertTriangle, Check, Loader2, X, Search,
   FileText, Banknote, ChevronDown, RefreshCw, PiggyBank, Plane, Ban, RotateCcw, Users, Menu, MessageCircle, Landmark, Image as ImageIcon, ChevronRight, ArrowDownLeft, ArrowUpRight, ArrowLeftRight, LogOut, UserCircle, HandCoins, LayoutList, TableIcon, TrendingUp, CalendarRange, ArrowUpDown, Pencil,
+  Shield, BarChart2, Clock, Eye, UserCheck, UserX, MoreHorizontal, Activity,
 } from "lucide-react";
 
 /* ----------------------------- brand palette ----------------------------- */
@@ -205,6 +206,7 @@ function fmtMoney(amount, currency) {
   catch { return idr(amount); }
 }
 function relDate(iso) { const d = new Date(iso); const days = Math.floor((Date.now() - d) / 86400000); if (days === 0) return "today"; if (days === 1) return "yesterday"; if (days < 7) return `${days} days ago`; return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }); }
+function relTime(iso) { if (!iso) return "—"; const diff = Date.now() - new Date(iso).getTime(); const mins = Math.floor(diff / 60000); if (mins < 2) return "just now"; if (mins < 60) return `${mins}m ago`; const hrs = Math.floor(mins / 60); if (hrs < 24) return `${hrs}h ago`; const days = Math.floor(hrs / 24); if (days < 30) return `${days}d ago`; return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" }); }
 function fmtDateShort(iso) { return new Date(iso + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "short" }); }
 function resolveDebitTarget(accounts, accountId) {
   const acc = accounts.find((a) => a.id === accountId); if (!acc) return null;
@@ -507,7 +509,7 @@ function CatSelect({ value, onChange, bare, blankWarn }) {
 }
 
 /* ===================================================================== */
-function App({ user }) {
+function App({ user, profile, onGoAdmin, impersonating, impersonatingUserId, impersonatingEmail, onExitImpersonation }) {
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState("overview");
   const [moreOpen, setMoreOpen] = useState(false);
@@ -550,12 +552,14 @@ function App({ user }) {
       .catch(() => {});
   }, []); // eslint-disable-line
 
+  const targetId = impersonatingUserId || user.id;
   useEffect(() => {
     let cancelled = false;
+    setReady(false);
     setLoadError(false);
     (async () => {
       try {
-        const d = await loadAllData(user.id);
+        const d = await loadAllData(targetId);
         if (cancelled) return; // stale fetch — a newer effect run already took over
         setAccounts(d.accounts); setGoals(d.goals); setMemory(d.memory);
         setScopes(d.scopes || DEFAULT_SCOPES);
@@ -570,6 +574,8 @@ function App({ user }) {
         setTransactions(repaired);
         const dr = loadDrafts(); if (dr) setDrafts(dr);
         setReady(true); // only set ready after all state is populated
+        // Track real user activity (not admin impersonation)
+        if (!impersonating) supabase.from("profiles").update({ last_seen_at: new Date().toISOString() }).eq("id", user.id);
       } catch (e) {
         if (cancelled) return;
         console.error("[db] load", e);
@@ -577,10 +583,10 @@ function App({ user }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [user.id]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("accounts", user.id, accounts.map((a) => toDbAccount(a, user.id)), (tbl, msg) => setSyncError(`Save failed (${tbl}): ${msg}`)), 600); return () => clearTimeout(t); }, [accounts, ready]); // eslint-disable-line
+  }, [targetId]); // eslint-disable-line
+  useEffect(() => { if (!ready || impersonating) return; const t = setTimeout(() => syncTable("accounts", user.id, accounts.map((a) => toDbAccount(a, user.id)), (tbl, msg) => setSyncError(`Save failed (${tbl}): ${msg}`)), 600); return () => clearTimeout(t); }, [accounts, ready]); // eslint-disable-line
   useEffect(() => { // eslint-disable-line
-    if (!ready) return;
+    if (!ready || impersonating) return;
     const today = new Date().toISOString().slice(0, 10);
     const t = setTimeout(async () => {
       const rows = accounts.filter((a) => a.balance != null).map((a) => ({ user_id: user.id, account_id: a.id, balance: a.balance, recorded_at: today }));
@@ -594,13 +600,13 @@ function App({ user }) {
     }, 600);
     return () => clearTimeout(t);
   }, [accounts, ready]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("transactions", user.id, transactions.map((tx) => toDbTx(tx, user.id))), 600); return () => clearTimeout(t); }, [transactions, ready]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("goals", user.id, goals.map((g) => toDbGoal(g, user.id))), 600); return () => clearTimeout(t); }, [goals, ready]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("subscriptions", user.id, subscriptions.map((s) => toDbSub(s, user.id))), 600); return () => clearTimeout(t); }, [subscriptions, ready]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("parties", user.id, parties.map((p) => toDbParty(p, user.id))), 600); return () => clearTimeout(t); }, [parties, ready]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const rows = Object.entries(memory).map(([merchant_key, v]) => ({ user_id: user.id, merchant_key, category: v.category || null, scope: v.scope || null, recurring: !!v.recurring })); const t = setTimeout(() => syncTableByKey("memory", user.id, rows, "merchant_key"), 600); return () => clearTimeout(t); }, [memory, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready || impersonating) return; const t = setTimeout(() => syncTable("transactions", user.id, transactions.map((tx) => toDbTx(tx, user.id))), 600); return () => clearTimeout(t); }, [transactions, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready || impersonating) return; const t = setTimeout(() => syncTable("goals", user.id, goals.map((g) => toDbGoal(g, user.id))), 600); return () => clearTimeout(t); }, [goals, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready || impersonating) return; const t = setTimeout(() => syncTable("subscriptions", user.id, subscriptions.map((s) => toDbSub(s, user.id))), 600); return () => clearTimeout(t); }, [subscriptions, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready || impersonating) return; const t = setTimeout(() => syncTable("parties", user.id, parties.map((p) => toDbParty(p, user.id))), 600); return () => clearTimeout(t); }, [parties, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready || impersonating) return; const rows = Object.entries(memory).map(([merchant_key, v]) => ({ user_id: user.id, merchant_key, category: v.category || null, scope: v.scope || null, recurring: !!v.recurring })); const t = setTimeout(() => syncTableByKey("memory", user.id, rows, "merchant_key"), 600); return () => clearTimeout(t); }, [memory, ready]); // eslint-disable-line
   useEffect(() => { // eslint-disable-line
-    if (!ready) return;
+    if (!ready || impersonating) return;
     const entries = Object.entries(tripMeta);
     const u = user.id;
     const t = setTimeout(async () => {
@@ -618,9 +624,9 @@ function App({ user }) {
     }, 600);
     return () => clearTimeout(t);
   }, [tripMeta, ready]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("statements", user.id, statements.map((s) => toDbStatement(s, user.id))), 600); return () => clearTimeout(t); }, [statements, ready]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const t = setTimeout(() => syncTable("import_history", user.id, importHistory.map((r) => toDbImportHistory(r, user.id))), 600); return () => clearTimeout(t); }, [importHistory, ready]); // eslint-disable-line
-  useEffect(() => { if (!ready) return; const t = setTimeout(() => supabase.from("profiles").upsert({ id: user.id, scopes }, { onConflict: "id" }).then(({ error: e }) => { if (e) console.error("[db] scopes", e); }), 600); return () => clearTimeout(t); }, [scopes, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready || impersonating) return; const t = setTimeout(() => syncTable("statements", user.id, statements.map((s) => toDbStatement(s, user.id))), 600); return () => clearTimeout(t); }, [statements, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready || impersonating) return; const t = setTimeout(() => syncTable("import_history", user.id, importHistory.map((r) => toDbImportHistory(r, user.id))), 600); return () => clearTimeout(t); }, [importHistory, ready]); // eslint-disable-line
+  useEffect(() => { if (!ready || impersonating) return; const t = setTimeout(() => supabase.from("profiles").upsert({ id: user.id, scopes }, { onConflict: "id" }).then(({ error: e }) => { if (e) console.error("[db] scopes", e); }), 600); return () => clearTimeout(t); }, [scopes, ready]); // eslint-disable-line
   useEffect(() => { if (ready) saveDrafts(drafts); }, [drafts, ready]);
 
   const months = useMemo(() => { const set = new Set(transactions.map((t) => monthKey(t.date)).filter(Boolean)); set.add(monthKey(new Date().toISOString())); return Array.from(set).sort().reverse(); }, [transactions]);
@@ -699,6 +705,13 @@ function App({ user }) {
           </button>
         ))}
         <div className="my-1.5 border-t border-stone-100" />
+        {profile?.role === "admin" && (
+          <button onClick={() => { onGoAdmin(); setMoreOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm font-medium text-left" style={{ color: BRAND.plum }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = BRAND.plumTint}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
+            <Shield size={15} /> Admin Console
+          </button>
+        )}
         <button onClick={signOut} className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm font-medium text-left" style={{ color: BRAND.red }} onMouseEnter={e => e.currentTarget.style.backgroundColor = BRAND.redTint} onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
           <LogOut size={15} /> Sign Out
         </button>
@@ -819,6 +832,7 @@ function App({ user }) {
   return (
     <div style={rootStyle}>
       <FontStyle />
+      {impersonating && <ImpersonationBanner email={impersonatingEmail || impersonatingUserId} onExit={onExitImpersonation} />}
 
       {/* ─── Left Sidebar (md+) ─── */}
       <aside className="hidden md:flex flex-col fixed left-0 top-0 h-full w-56 bg-white border-r border-stone-100 z-20">
@@ -842,7 +856,15 @@ function App({ user }) {
             </React.Fragment>
           ))}
         </nav>
-        <div className="p-3 border-t border-stone-100">
+        <div className="p-3 border-t border-stone-100 space-y-0.5">
+          {profile?.role === "admin" && (
+            <button onClick={onGoAdmin} className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors"
+              style={{ color: BRAND.plum }}
+              onMouseEnter={e => e.currentTarget.style.backgroundColor = BRAND.plumTint}
+              onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
+              <Shield size={16} /> Admin Console
+            </button>
+          )}
           <button onClick={signOut} className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-left transition-colors" style={{ color: BRAND.red }}
             onMouseEnter={e => e.currentTarget.style.backgroundColor = BRAND.redTint}
             onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
@@ -2418,6 +2440,55 @@ function Goals({ goals, setGoals, transactions, month }) {
 
 /* ----------------------------- misc ----------------------------- */
 function Empty({ icon: Icon, title, body, action }) { return <Card className="p-10 text-center"><div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mx-auto mb-3"><Icon size={22} className="text-stone-400" /></div><h3 className="font-semibold text-stone-800">{title}</h3><p className="text-sm text-stone-400 mt-1 max-w-sm mx-auto">{body}</p>{action && <div className="mt-4 flex justify-center">{action}</div>}</Card>; }
+
+function PendingCard({ onSignOut }) {
+  return (
+    <div style={{ fontFamily: "'Inter',ui-sans-serif,system-ui,sans-serif", background: "#F4F6FB", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <FontStyle />
+      <div className="w-full max-w-sm mx-auto">
+        <div className="flex items-center gap-2.5 justify-center mb-8">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: BRAND.blue }}><Wallet size={20} className="text-white" /></div>
+          <div className="leading-tight"><div className="text-xl font-semibold text-stone-900 tracking-tight">FinPlus</div><div className="text-xs text-stone-400">your money, sorted</div></div>
+        </div>
+        <Card className="p-8 text-center">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: BRAND.goldTint }}><Clock size={26} style={{ color: BRAND.gold }} /></div>
+          <h2 className="text-lg font-semibold text-stone-900 mb-2">Account pending approval</h2>
+          <p className="text-sm text-stone-500 mb-6">Your account is waiting for admin approval. You'll be able to access FinPlus once the admin verifies your account.</p>
+          <Btn variant="outline" onClick={onSignOut}><LogOut size={14} /> Sign Out</Btn>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function DeniedCard({ onSignOut }) {
+  return (
+    <div style={{ fontFamily: "'Inter',ui-sans-serif,system-ui,sans-serif", background: "#F4F6FB", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <FontStyle />
+      <div className="w-full max-w-sm mx-auto">
+        <div className="flex items-center gap-2.5 justify-center mb-8">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: BRAND.blue }}><Wallet size={20} className="text-white" /></div>
+          <div className="leading-tight"><div className="text-xl font-semibold text-stone-900 tracking-tight">FinPlus</div><div className="text-xs text-stone-400">your money, sorted</div></div>
+        </div>
+        <Card className="p-8 text-center">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: BRAND.redTint }}><UserX size={26} style={{ color: BRAND.red }} /></div>
+          <h2 className="text-lg font-semibold text-stone-900 mb-2">Account access denied</h2>
+          <p className="text-sm text-stone-500 mb-6">Your account doesn't have access to FinPlus. Contact the admin if you think this is a mistake.</p>
+          <Btn variant="outline" onClick={onSignOut}><LogOut size={14} /> Sign Out</Btn>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function ImpersonationBanner({ email, onExit }) {
+  return (
+    <div style={{ background: BRAND.gold, color: "#fff", padding: "8px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <span style={{ fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}><Eye size={14} />Viewing as {email} — read-only mode</span>
+      <button onClick={onExit} style={{ background: "rgba(0,0,0,0.25)", border: "none", color: "#fff", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600, whiteSpace: "nowrap" }}>Exit impersonation</button>
+    </div>
+  );
+}
 function splitCSV(line) { const out = []; let cur = ""; let q = false; for (let i = 0; i < line.length; i++) { const c = line[i]; if (c === '"') q = !q; else if (c === "," && !q) { out.push(cur); cur = ""; } else cur += c; } out.push(cur); return out; }
 
 /* ----------------------------- ABOUT ME ----------------------------- */
@@ -3035,6 +3106,390 @@ function AuthToast({ toast, onClose }) {
   );
 }
 
+/* ============================= ADMIN CONSOLE ============================= */
+async function loadAdminData() {
+  const [pr, tr, ar] = await Promise.all([
+    supabase.from("profiles").select("id, email, display_name, role, status, last_seen_at, approved_at").order("approved_at", { ascending: false }),
+    supabase.from("transactions").select("id, user_id, amount, direction, category, date, desc").order("date", { ascending: false }).limit(1000),
+    supabase.from("accounts").select("user_id, balance, balance_owed, type"),
+  ]);
+  return { profiles: pr.data || [], transactions: tr.data || [], accounts: ar.data || [] };
+}
+
+function AdminOverview({ profiles, transactions, accounts, onGoToPending }) {
+  const now = new Date();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const sevenDaysAgo = new Date(now - 7 * 86400000).toISOString();
+  const thirtyDaysAgo = new Date(now - 30 * 86400000).toISOString();
+
+  const approved = profiles.filter((p) => p.status === "approved");
+  const pending = profiles.filter((p) => p.status === "pending");
+  const active7 = approved.filter((p) => p.last_seen_at && p.last_seen_at > sevenDaysAgo);
+  const active30 = approved.filter((p) => p.last_seen_at && p.last_seen_at > thirtyDaysAgo);
+  const totalTx = transactions.length;
+  const monthExpense = transactions.filter((t) => t.direction === "expense" && (t.date || "") >= monthStart).reduce((s, t) => s + (t.amount || 0), 0);
+
+  // Signups over time — last 12 weeks bucketed by week
+  const signupChart = [];
+  for (let w = 11; w >= 0; w--) {
+    const wStart = new Date(now); wStart.setDate(wStart.getDate() - wStart.getDay() - w * 7); wStart.setHours(0, 0, 0, 0);
+    const wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 7);
+    const label = wStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const count = approved.filter((p) => { const d = p.approved_at; return d && d >= wStart.toISOString() && d < wEnd.toISOString(); }).length;
+    signupChart.push({ label, count });
+  }
+
+  // Top 8 categories by tx count
+  const catCounts = {};
+  transactions.filter((t) => t.direction === "expense" && t.category).forEach((t) => { catCounts[t.category] = (catCounts[t.category] || 0) + 1; });
+  const catChart = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => ({ name, count })).reverse();
+
+  // Recent 10 transactions with email lookup
+  const emailMap = {}; profiles.forEach((p) => { emailMap[p.id] = p.email || p.display_name || p.id.slice(0, 8); });
+  const recent = transactions.slice(0, 10);
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl p-4 md:p-5" style={{ background: `linear-gradient(135deg, ${BRAND.blue}, ${BRAND.blueDark})` }}>
+        <div className="flex items-center gap-2 mb-4 text-white">
+          <Shield size={18} /><span className="font-semibold text-base">System overview</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+          {[
+            { label: "Total users", val: approved.length },
+            { label: "Pending approvals", val: pending.length, click: onGoToPending, warn: pending.length > 0 },
+            { label: "Active · 7 days", val: active7.length },
+            { label: "Active · 30 days", val: active30.length },
+            { label: "Total transactions", val: totalTx.toLocaleString() },
+            { label: "Expense this month", val: idr(monthExpense) },
+          ].map(({ label, val, click, warn }) => (
+            <button key={label} onClick={click} disabled={!click}
+              className={"rounded-xl p-3 text-left " + (click ? "cursor-pointer hover:bg-white/20" : "cursor-default")}
+              style={{ background: warn ? "rgba(185,139,78,0.35)" : "rgba(0,0,0,0.18)" }}>
+              <div className="text-[10px] font-medium uppercase tracking-wide" style={{ color: "rgba(255,255,255,0.65)" }}>{label}</div>
+              <div className="text-base font-semibold text-white mt-1 num leading-tight">{val}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3"><Activity size={15} style={{ color: BRAND.blue }} /><span className="text-sm font-semibold text-stone-800">Signups / week</span><span className="text-xs text-stone-400 ml-auto">last 12 weeks</span></div>
+          <ResponsiveContainer width="100%" height={140}>
+            <AreaChart data={signupChart} margin={{ left: -20, right: 4, top: 4, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={2} />
+              <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12, border: "none", boxShadow: "0 4px 12px rgba(0,0,0,.1)" }} />
+              <defs><linearGradient id="adg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={BRAND.blue} stopOpacity={0.25} /><stop offset="100%" stopColor={BRAND.blue} stopOpacity={0} /></linearGradient></defs>
+              <Area type="monotone" dataKey="count" name="Signups" stroke={BRAND.blue} fill="url(#adg)" strokeWidth={2} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3"><BarChart2 size={15} style={{ color: BRAND.plum }} /><span className="text-sm font-semibold text-stone-800">Top categories</span><span className="text-xs text-stone-400 ml-auto">by tx count</span></div>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={catChart} layout="vertical" margin={{ left: 0, right: 16, top: 0, bottom: 0 }}>
+              <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={110} />
+              <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12, border: "none", boxShadow: "0 4px 12px rgba(0,0,0,.1)" }} />
+              <Bar dataKey="count" name="Transactions" fill={BRAND.plum} radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      </div>
+
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-3"><Clock size={15} style={{ color: BRAND.slate }} /><span className="text-sm font-semibold text-stone-800">Recent activity</span><span className="text-xs text-stone-400 ml-auto">latest 10 across all users</span></div>
+        {recent.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-xs text-stone-400 uppercase tracking-wide border-b border-stone-100">{["User", "Merchant", "Category", "Amount", "Date"].map((h) => <th key={h} className="text-left py-2 pr-3 font-medium">{h}</th>)}</tr></thead>
+              <tbody>{recent.map((t) => (
+                <tr key={t.id} className="border-b border-stone-50">
+                  <td className="py-2 pr-3 text-stone-500 text-xs truncate max-w-[140px]">{emailMap[t.user_id] || t.user_id?.slice(0, 8)}</td>
+                  <td className="py-2 pr-3 text-stone-800 truncate max-w-[160px]">{t.desc}</td>
+                  <td className="py-2 pr-3"><Pill color={PALETTE[CATEGORIES.indexOf(t.category) % PALETTE.length]}>{t.category || "—"}</Pill></td>
+                  <td className="py-2 pr-3 text-right num font-medium" style={{ color: t.direction === "income" ? BRAND.success : BRAND.ink }}>{t.direction === "income" ? "+" : ""}{idr(t.amount)}</td>
+                  <td className="py-2 text-stone-400 text-xs num whitespace-nowrap">{t.date}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : <Muted>No transactions yet.</Muted>}
+      </Card>
+    </div>
+  );
+}
+
+function AdminUsers({ profiles, accounts, transactions, onSuspend, onReactivate, onToggleAdmin, onImpersonate, currentAdminId }) {
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("All");
+  const [selectedId, setSelectedId] = useState(null);
+  const [actionOpen, setActionOpen] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+
+  const byUser = {};
+  accounts.forEach((a) => { (byUser[a.user_id] = byUser[a.user_id] || []).push(a); });
+  const txCount = {};
+  transactions.forEach((t) => { txCount[t.user_id] = (txCount[t.user_id] || 0) + 1; });
+  const getBalance = (uid) => (byUser[uid] || []).filter((a) => ["debit", "e-wallet", "cash", "qris"].includes(a.type)).reduce((s, a) => s + (Number(a.balance) || 0), 0);
+  const getOwed = (uid) => (byUser[uid] || []).filter((a) => a.type === "credit").reduce((s, a) => s + (Number(a.balance_owed) || 0), 0);
+
+  const nonPending = profiles.filter((p) => p.status !== "pending");
+  const filtered = nonPending.filter((p) => {
+    const q = search.toLowerCase();
+    if (q && !(p.email || "").toLowerCase().includes(q) && !(p.display_name || "").toLowerCase().includes(q)) return false;
+    if (typeFilter === "Members" && p.role !== "member") return false;
+    if (typeFilter === "Admins" && p.role !== "admin") return false;
+    if (typeFilter === "Suspended" && p.status !== "disabled") return false;
+    return true;
+  });
+
+  const selected = selectedId ? profiles.find((p) => p.id === selectedId) : null;
+
+  const doConfirm = (type, p) => { setConfirm({ type, p }); setActionOpen(null); };
+  const runConfirm = () => {
+    if (!confirm) return;
+    const { type, p } = confirm;
+    if (type === "suspend") onSuspend(p.id);
+    if (type === "reactivate") onReactivate(p.id);
+    if (type === "makeAdmin") onToggleAdmin(p.id, "admin");
+    if (type === "revokeAdmin") onToggleAdmin(p.id, "member");
+    setConfirm(null); setSelectedId(null);
+  };
+
+  const statusBadge = (p) => {
+    const map = { approved: [BRAND.success, "approved"], disabled: [BRAND.red, "suspended"], rejected: [BRAND.red, "rejected"] };
+    const [color, label] = map[p.status] || [BRAND.slate, p.status || "—"];
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: color + "1a", color }}>{label}</span>;
+  };
+
+  return (
+    <div className="space-y-4">
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.type === "suspend" ? `Suspend ${confirm.p.email}?` : confirm.type === "reactivate" ? `Reactivate ${confirm.p.email}?` : confirm.type === "makeAdmin" ? "Make admin?" : "Revoke admin?"}
+          body={confirm.type === "makeAdmin" ? "Admins can view all family data." : confirm.type === "revokeAdmin" ? "This user will lose admin access." : undefined}
+          confirmLabel={confirm.type === "suspend" ? "Suspend" : confirm.type === "revokeAdmin" ? "Revoke" : "Confirm"}
+          danger={confirm.type === "suspend" || confirm.type === "revokeAdmin"}
+          onConfirm={runConfirm} onCancel={() => setConfirm(null)}
+        />
+      )}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-48">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by email or name…" className={inputCls + " pl-9"} />
+        </div>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className={inputCls + " w-auto"}>
+          {["All", "Members", "Admins", "Suspended"].map((v) => <option key={v}>{v}</option>)}
+        </select>
+        <span className="text-xs text-stone-400">{filtered.length} users</span>
+      </div>
+
+      <div className="flex gap-4">
+        <div className="flex-1 min-w-0">
+          <Card className="p-0 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[700px]">
+                <thead><tr className="text-xs text-stone-400 uppercase tracking-wide border-b border-stone-100 bg-stone-50">
+                  {["Email", "Name", "Role", "Status", "Accts", "Txns", "Balance", "Owed", "Last seen", ""].map((h) => <th key={h} className="text-left py-2.5 px-3 font-medium whitespace-nowrap">{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {filtered.map((p) => (
+                    <tr key={p.id} onClick={() => setSelectedId(selectedId === p.id ? null : p.id)} className={"border-b border-stone-50 cursor-pointer transition-colors " + (selectedId === p.id ? "bg-blue-50" : "hover:bg-stone-50")}>
+                      <td className="py-2.5 px-3 text-stone-800 font-medium max-w-[180px] truncate">{p.email || "—"}</td>
+                      <td className="py-2.5 px-3 text-stone-500 max-w-[120px] truncate">{p.display_name || "—"}</td>
+                      <td className="py-2.5 px-3"><Pill color={p.role === "admin" ? BRAND.plum : BRAND.slate}>{p.role || "member"}</Pill></td>
+                      <td className="py-2.5 px-3">{statusBadge(p)}</td>
+                      <td className="py-2.5 px-3 num text-stone-500 text-center">{(byUser[p.id] || []).length}</td>
+                      <td className="py-2.5 px-3 num text-stone-500 text-center">{txCount[p.id] || 0}</td>
+                      <td className="py-2.5 px-3 num text-right text-stone-800">{idr(getBalance(p.id))}</td>
+                      <td className="py-2.5 px-3 num text-right" style={{ color: getOwed(p.id) > 0 ? BRAND.red : BRAND.slate }}>{idr(getOwed(p.id))}</td>
+                      <td className="py-2.5 px-3 text-stone-400 text-xs whitespace-nowrap">{relTime(p.last_seen_at)}</td>
+                      <td className="py-2.5 px-3">
+                        <div className="relative">
+                          <button onClick={(e) => { e.stopPropagation(); setActionOpen(actionOpen === p.id ? null : p.id); }} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-400 hover:text-stone-700"><MoreHorizontal size={15} /></button>
+                          {actionOpen === p.id && (
+                            <>
+                              <div className="fixed inset-0 z-30" onClick={() => setActionOpen(null)} />
+                              <div className="absolute right-0 top-8 w-44 bg-white border border-stone-100 rounded-xl shadow-xl z-40 p-1 text-sm">
+                                <button onClick={() => { setActionOpen(null); onImpersonate(p.id, p.email || p.display_name || p.id.slice(0, 8)); }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-stone-50"><Eye size={13} /> View as</button>
+                                {p.status === "disabled"
+                                  ? <button onClick={() => doConfirm("reactivate", p)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-stone-50"><UserCheck size={13} /> Reactivate</button>
+                                  : <button onClick={() => doConfirm("suspend", p)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-red-50 text-red-600"><UserX size={13} /> Suspend</button>}
+                                {p.role === "admin"
+                                  ? <button onClick={() => doConfirm("revokeAdmin", p)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-stone-50"><Shield size={13} /> Revoke admin</button>
+                                  : <button onClick={() => doConfirm("makeAdmin", p)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-stone-50"><Shield size={13} /> Make admin</button>}
+                                <div className="border-t border-stone-100 mt-1 pt-1">
+                                  <button onClick={() => { setActionOpen(null); alert("Tell the user to use 'Forgot Password' on the sign-in page. A proper admin reset via Edge Function will be added later."); }} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg hover:bg-stone-50 text-stone-400 text-xs">Reset Password…</button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!filtered.length && <tr><td colSpan={10}><Muted>No users match.</Muted></td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+
+        {selected && (
+          <Card className="p-4 w-72 shrink-0 space-y-3 self-start">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="font-semibold text-stone-900 break-all">{selected.email || selected.display_name || "—"}</div>
+                <div className="text-xs text-stone-400 mt-0.5">{selected.display_name || ""}</div>
+              </div>
+              <button onClick={() => setSelectedId(null)} className="text-stone-300 hover:text-stone-500"><X size={16} /></button>
+            </div>
+            <div className="space-y-1.5 text-sm">
+              {[
+                ["Role", <Pill key="r" color={selected.role === "admin" ? BRAND.plum : BRAND.slate}>{selected.role || "member"}</Pill>],
+                ["Status", statusBadge(selected)],
+                ["Accounts", (byUser[selected.id] || []).length],
+                ["Transactions", txCount[selected.id] || 0],
+                ["Balance", idr(getBalance(selected.id))],
+                ["Credit owed", idr(getOwed(selected.id))],
+                ["Last seen", relTime(selected.last_seen_at)],
+                ["Approved", selected.approved_at ? new Date(selected.approved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"],
+              ].map(([label, val]) => (
+                <div key={label} className="flex items-center justify-between gap-2">
+                  <span className="text-stone-400 text-xs">{label}</span>
+                  <span className="text-stone-800 font-medium text-xs num">{val}</span>
+                </div>
+              ))}
+            </div>
+            {(byUser[selected.id] || []).length > 0 && (
+              <div className="border-t border-stone-100 pt-2 space-y-1">
+                <div className="text-xs text-stone-400 font-medium">Accounts</div>
+                {(byUser[selected.id] || []).map((a, i) => (
+                  <div key={i} className="flex justify-between text-xs"><span className="text-stone-600 truncate">{a.type}</span><span className="num text-stone-800 font-medium">{idr(a.balance || a.balance_owed || 0)}</span></div>
+                ))}
+              </div>
+            )}
+            <Btn onClick={() => onImpersonate(selected.id, selected.email || selected.display_name || "user")} className="w-full"><Eye size={14} /> View as {selected.display_name || selected.email?.split("@")[0] || "user"}</Btn>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminPending({ profiles, onApprove, onReject }) {
+  const [confirm, setConfirm] = useState(null);
+  const pending = profiles.filter((p) => p.status === "pending").sort((a, b) => (a.approved_at || "") < (b.approved_at || "") ? -1 : 1);
+
+  return (
+    <div>
+      {confirm && (
+        <ConfirmDialog
+          title={`Reject ${confirm.email}?`}
+          body="They won't be able to access FinPlus. Their account remains in Supabase Auth."
+          confirmLabel="Reject" danger
+          onConfirm={() => { onReject(confirm.id); setConfirm(null); }}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+      {!pending.length ? (
+        <Empty icon={UserCheck} title="No pending approvals" body="New signups will appear here for you to verify." />
+      ) : (
+        <Card className="p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-xs text-stone-400 uppercase tracking-wide border-b border-stone-100 bg-stone-50">
+                {["Email", "Display name", "Signed up", "Actions"].map((h) => <th key={h} className="text-left py-2.5 px-4 font-medium">{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {pending.map((p) => (
+                  <tr key={p.id} className="border-b border-stone-50">
+                    <td className="py-3 px-4 font-medium text-stone-800">{p.email || "—"}</td>
+                    <td className="py-3 px-4 text-stone-500">{p.display_name || "—"}</td>
+                    <td className="py-3 px-4 text-stone-400 num text-xs">{p.approved_at ? new Date(p.approved_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <Btn onClick={() => onApprove(p.id)}><UserCheck size={13} /> Approve</Btn>
+                        <Btn variant="warn" onClick={() => setConfirm(p)}><UserX size={13} /> Reject</Btn>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AdminConsole({ user, onExit, onImpersonate }) {
+  const [adminTab, setAdminTab] = useState("overview");
+  const [data, setData] = useState({ profiles: [], transactions: [], accounts: [] });
+  const [loading, setLoading] = useState(true);
+
+  const refresh = () => { setLoading(true); loadAdminData().then((d) => { setData(d); setLoading(false); }).catch((e) => { console.error("[admin] load", e); setLoading(false); }); };
+  useEffect(() => { refresh(); }, []); // eslint-disable-line
+
+  const updateProfile = (id, patch) => setData((d) => ({ ...d, profiles: d.profiles.map((p) => p.id === id ? { ...p, ...patch } : p) }));
+  const onSuspend = async (id) => { await supabase.from("profiles").update({ status: "disabled" }).eq("id", id); updateProfile(id, { status: "disabled" }); };
+  const onReactivate = async (id) => { await supabase.from("profiles").update({ status: "approved" }).eq("id", id); updateProfile(id, { status: "approved" }); };
+  const onToggleAdmin = async (id, role) => { await supabase.from("profiles").update({ role }).eq("id", id); updateProfile(id, { role }); };
+  const onApprove = async (id) => { await supabase.from("profiles").update({ status: "approved", approved_at: new Date().toISOString(), approved_by: user.id }).eq("id", id); updateProfile(id, { status: "approved", approved_at: new Date().toISOString() }); };
+  const onReject = async (id) => { await supabase.from("profiles").update({ status: "rejected" }).eq("id", id); updateProfile(id, { status: "rejected" }); };
+
+  const pendingCount = data.profiles.filter((p) => p.status === "pending").length;
+
+  const tabs = [
+    ["overview", "Overview", LayoutDashboard],
+    ["users", "Users", Users],
+    ["pending", pendingCount > 0 ? `Pending (${pendingCount})` : "Pending", Shield],
+  ];
+
+  return (
+    <div style={rootStyle}>
+      <FontStyle />
+      <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: BRAND.plum }}><Shield size={18} className="text-white" /></div>
+            <div><div className="font-semibold text-stone-900">Admin Console</div><div className="text-xs text-stone-400">FinPlus system management</div></div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Btn variant="ghost" onClick={refresh} disabled={loading}>{loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Refresh</Btn>
+            <Btn variant="outline" onClick={onExit}><X size={14} /> Exit console</Btn>
+          </div>
+        </div>
+
+        <div className="flex gap-1 border-b border-stone-200">
+          {tabs.map(([id, label, Icon]) => (
+            <button key={id} onClick={() => setAdminTab(id)}
+              className={"flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors " + (adminTab === id ? "border-b-2" : "border-transparent text-stone-500 hover:text-stone-700")}
+              style={adminTab === id ? { borderColor: BRAND.blue, color: BRAND.blue } : {}}>
+              <Icon size={14} />{label}{id === "pending" && pendingCount > 0 && <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs font-semibold text-white" style={{ background: BRAND.red }}>{pendingCount}</span>}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="flex justify-center py-20"><Loader2 className="animate-spin" style={{ color: BRAND.blue }} /></div>
+        ) : (
+          <>
+            {adminTab === "overview" && <AdminOverview profiles={data.profiles} transactions={data.transactions} accounts={data.accounts} onGoToPending={() => setAdminTab("pending")} />}
+            {adminTab === "users" && <AdminUsers profiles={data.profiles} accounts={data.accounts} transactions={data.transactions} onSuspend={onSuspend} onReactivate={onReactivate} onToggleAdmin={onToggleAdmin} onImpersonate={onImpersonate} currentAdminId={user.id} />}
+            {adminTab === "pending" && <AdminPending profiles={data.profiles} onApprove={onApprove} onReject={onReject} />}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LoginPage() {
   const [email, setEmail] = useState(""); const [password, setPassword] = useState("");
   const [mode, setMode] = useState("signin"); const [loading, setLoading] = useState(false);
@@ -3098,19 +3553,83 @@ function LoginPage() {
 }
 
 function AuthWrapper() {
-  const [session, setSession] = useState(null); const [checking, setChecking] = useState(true);
+  const [session, setSession] = useState(null);
+  const [checking, setChecking] = useState(true);
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [route, setRoute] = useState("app"); // "app" | "admin"
+  const [impersonatingId, setImpersonatingId] = useState(() => sessionStorage.getItem("impersonating_user_id") || null);
+  const [impersonatingEmail, setImpersonatingEmail] = useState(() => sessionStorage.getItem("impersonating_user_email") || null);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setChecking(false); });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => setSession(session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => {
+      setSession(s);
+      if (!s) { setProfile(null); setRoute("app"); setImpersonatingId(null); }
+    });
     return () => subscription.unsubscribe();
   }, []);
-  if (checking) return (
+
+  useEffect(() => {
+    if (!session?.user?.id) { setProfile(null); return; }
+    setProfileLoading(true);
+    supabase.from("profiles").select("id, role, status, email, display_name").eq("id", session.user.id).maybeSingle()
+      .then(({ data }) => {
+        // upsert email so admin console can see it
+        const email = session.user.email;
+        if (email && (!data?.email || data.email !== email)) {
+          supabase.from("profiles").upsert({ id: session.user.id, email }, { onConflict: "id" });
+        }
+        setProfile(data ? { ...data, email: data.email || email } : { id: session.user.id, role: "member", status: "approved", email });
+        setProfileLoading(false);
+      });
+  }, [session?.user?.id]); // eslint-disable-line
+
+  const spinner = (
     <div style={{ fontFamily: "'Inter',ui-sans-serif,system-ui,sans-serif", background: "#F4F6FB", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <FontStyle /><Loader2 className="animate-spin" style={{ color: BRAND.blue }} />
     </div>
   );
+
+  if (checking || profileLoading) return spinner;
   if (!session) return <LoginPage />;
-  return <App user={session.user} />;
+
+  const signOut = () => supabase.auth.signOut();
+  const status = profile?.status;
+  if (status === "pending") return <PendingCard onSignOut={signOut} />;
+  if (status === "rejected" || status === "disabled") return <DeniedCard onSignOut={signOut} />;
+
+  if (route === "admin" && profile?.role === "admin") {
+    const startImpersonation = (userId, email) => {
+      sessionStorage.setItem("impersonating_user_id", userId);
+      sessionStorage.setItem("impersonating_user_email", email);
+      setImpersonatingId(userId);
+      setImpersonatingEmail(email);
+      setRoute("app");
+    };
+    return <AdminConsole user={session.user} onExit={() => setRoute("app")} onImpersonate={startImpersonation} />;
+  }
+
+  const impersonating = !!impersonatingId && profile?.role === "admin";
+  const exitImpersonation = () => {
+    sessionStorage.removeItem("impersonating_user_id");
+    sessionStorage.removeItem("impersonating_user_email");
+    setImpersonatingId(null);
+    setImpersonatingEmail(null);
+    setRoute("admin");
+  };
+
+  return (
+    <App
+      user={session.user}
+      profile={profile}
+      onGoAdmin={() => setRoute("admin")}
+      impersonating={impersonating}
+      impersonatingUserId={impersonatingId}
+      impersonatingEmail={impersonatingEmail}
+      onExitImpersonation={exitImpersonation}
+    />
+  );
 }
 
 export default AuthWrapper;
