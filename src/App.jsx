@@ -320,7 +320,14 @@ async function syncTableByKey(table, userId, rows, keyCol) {
 
 /* ----------------------------- AI ----------------------------- */
 async function anthropic(content, maxTokens = 1000) {
-  const res = await fetch("/api/claude", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, messages: [{ role: "user", content }] }) });
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/claude`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, messages: [{ role: "user", content }] }),
+  });
   if (!res.ok) throw new Error("Couldn't reach the reader (status " + res.status + ").");
   const data = await res.json();
   return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
